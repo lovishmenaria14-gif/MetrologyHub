@@ -52,6 +52,8 @@ export const Scanner = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [tamperWarning, setTamperWarning] = useState<string | null>(null);
+
+    // Inspector GPS location
     const [currentLocation, setCurrentLocation] = useState<{
         lat: number;
         lng: number;
@@ -403,6 +405,49 @@ export const Scanner = () => {
         }
     };
 
+    // Get fresh GPS location when scan starts
+    const getCurrentGPS = (): Promise<{
+        lat: number;
+        lng: number;
+    } | null> => {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                console.warn(
+                    'Geolocation is not supported'
+                );
+
+                resolve(null);
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const location = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+
+                    setCurrentLocation(location);
+
+                    resolve(location);
+                },
+                (error) => {
+                    console.warn(
+                        'Unable to get GPS location:',
+                        error
+                    );
+
+                    resolve(null);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 30000
+                }
+            );
+        });
+    };
+
     useEffect(() => {
         if (
             showCamera &&
@@ -543,9 +588,35 @@ export const Scanner = () => {
         setError(null);
         setReport(null);
 
+        // Get fresh GPS location at the time of inspection
+        const gps = await getCurrentGPS();
+
         const formData = new FormData();
 
         formData.append('image', files[0]);
+
+        // Send GPS coordinates to backend
+        if (gps) {
+            formData.append(
+                'latitude',
+                gps.lat.toString()
+            );
+
+            formData.append(
+                'longitude',
+                gps.lng.toString()
+            );
+
+            console.log(
+                'Inspection GPS:',
+                gps.lat,
+                gps.lng
+            );
+        } else {
+            console.warn(
+                'GPS unavailable. Scan will continue without location.'
+            );
+        }
 
         // Offline mode
         if (!navigator.onLine) {
@@ -1970,3 +2041,4 @@ export const Scanner = () => {
         </div>
     );
 };
+
