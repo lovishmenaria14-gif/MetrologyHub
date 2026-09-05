@@ -59,6 +59,14 @@ function parseManufacturer(text) {
 
 function parseMonthYear(text) {
   if (!text) return null;
+  // Accept full dates as well as month/year declarations commonly printed on labels.
+  const monthName = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+  const fullDateWithMonthName = text.match(new RegExp(`\\b([0-9]{1,2})[-\\/. ]${monthName}[-\\/. ]([0-9]{2,4})\\b`, 'i'));
+  if (fullDateWithMonthName) return fullDateWithMonthName[0];
+
+  const fullNumericDate = text.match(/\b([0-9]{1,2})[\/.-]([0-9]{1,2})[\/.-]([0-9]{2,4})\b/);
+  if (fullNumericDate) return fullNumericDate[0];
+
   // e.g., Jan 2021, JAN-2021, 01/2021 (month/year), Mfg. Date: Jan 2021
   const m1 = text.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b[-\s,]*([0-9]{4})/i);
   if (m1) return `${m1[1]} ${m1[2]}`;

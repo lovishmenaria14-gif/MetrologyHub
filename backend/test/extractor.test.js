@@ -48,6 +48,14 @@ function run() {
   const d1b = extractor.parseMonthYear(t6b);
   assert.strictEqual(d1b, '01/2023');
 
+  const t6c = 'MFG Date: 24-Apr-23';
+  const d1c = extractor.parseMonthYear(t6c);
+  assert.strictEqual(d1c, '24-Apr-23');
+
+  const t6d = 'MFG Date: 24/04/2023';
+  const d1d = extractor.parseMonthYear(t6d);
+  assert.strictEqual(d1d, '24/04/2023');
+
   // parseAll integrates
   const multi = `MRP Rs. 59\nNet Weight 250 ml\n Manufactured by: XYZ Ltd\nMfg Date: Feb 2022`;
   const all = extractor.parseAll(multi);

@@ -27,7 +27,7 @@
             "id": "mfg_date",
             "name": "Manufacturing / Packing Date",
             "description": "Checks for date patterns MM/YYYY or similar",
-            "regex": "(mfd|pkd|use by|manufactured|packed).{0,15}(\\d{2}[/\\.-]\\d{2,4}|[a-zA-Z]{3,}\\s*\\d{2,4})",
+            "regex": "(mfd|mfg(?:\\.?\\s*date)?|pkd|use by|manufactured|manufacturing date|packed).{0,15}(\\d{1,2}[/\\.-](?:\\d{1,2}|[a-zA-Z]{3,})[/\\.-]?\\d{2,4}|\\d{1,2}[/\\.-]\\d{2,4}|[a-zA-Z]{3,}\\s*\\d{2,4})",
             "flags": "i"
         },
         {
