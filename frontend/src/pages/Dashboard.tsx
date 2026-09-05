@@ -130,7 +130,7 @@ export const Dashboard = () => {
                     onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                     <Sparkles className="text-brand" size={20} style={{ animation: 'pulse 2s infinite' }} />
-                    <div style={{ position: 'relative', overflow: 'hidden', height: '20px', width: '300px' }}>
+                    <div style={{ position: 'relative', overflow: 'hidden', height: '20px', width: 'min(300px, 100%)' }}>
                         <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary)', position: 'absolute', top: 0, left: 0, animation: 'slideUpFade 0.5s ease-out forwards' }} key={insightIndex}>
                             {insights[insightIndex]}
                         </p>

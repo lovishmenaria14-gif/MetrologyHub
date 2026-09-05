@@ -14,7 +14,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 // Backend API URL
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 export const Auth = () => {
     const [isLogin, setIsLogin] = useState(true);

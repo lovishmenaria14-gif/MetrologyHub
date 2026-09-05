@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, ScanLine, History, Settings, Sun, Moon, LogOut, CloudOff } from 'lucide-react';
+import { LayoutDashboard, ScanLine, History, Settings, Sun, Moon, LogOut, CloudOff, Menu, X } from 'lucide-react';
 
 export const DashboardLayout = () => {
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
     const [lang, setLang] = useState(localStorage.getItem('appLang') || 'English');
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem('sidebarCollapsed') === 'true');
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -61,6 +63,24 @@ export const DashboardLayout = () => {
 
     const isHindi = lang === 'Hindi';
     const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    const toggleSidebar = () => {
+        setSidebarCollapsed(prev => {
+            localStorage.setItem('sidebarCollapsed', String(!prev));
+            return !prev;
+        });
+    };
+    const isMobileViewport = () => window.matchMedia('(max-width: 900px)').matches;
+    const toggleNavigation = () => {
+        if (isMobileViewport()) {
+            setMobileNavOpen(prev => !prev);
+        } else {
+            toggleSidebar();
+        }
+    };
+    const closeNavigation = () => {
+        setMobileNavOpen(false);
+        if (!isMobileViewport()) setSidebarCollapsed(true);
+    };
 
     const t = {
         overview: isHindi ? 'डैशबोर्ड' : 'Overview',
@@ -94,11 +114,15 @@ export const DashboardLayout = () => {
     };
 
     return (
-        <div className="layout">
+        <div className={`layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileNavOpen ? 'mobile-nav-open' : ''}`}>
+            <button className="mobile-nav-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
             <aside className="sidebar">
                 <div className="sidebar-brand">
                     <ScanLine className="brand-icon" size={28} />
                     <h2>MetrologyHub</h2>
+                    <button className="icon-btn sidebar-close" onClick={closeNavigation} aria-label="Hide dashboard navigation">
+                        <X size={20} />
+                    </button>
                 </div>
 
                 <nav className="sidebar-nav">
@@ -107,6 +131,7 @@ export const DashboardLayout = () => {
                             key={item.path}
                             to={item.path}
                             className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                            onClick={() => setMobileNavOpen(false)}
                         >
                             <item.icon size={20} />
                             <span>{item.label}</span>
@@ -127,6 +152,11 @@ export const DashboardLayout = () => {
 
             <main className="main-content">
                 <header className="topbar">
+                    <div className="topbar-start">
+                        <button className="icon-btn mobile-menu-btn" onClick={toggleNavigation} aria-label={sidebarCollapsed || mobileNavOpen ? 'Show dashboard navigation' : 'Hide dashboard navigation'}>
+                            <Menu size={21} />
+                        </button>
+                    </div>
                     <div className="topbar-search">
                         {/* Search or breadcrumbs */}
                     </div>
