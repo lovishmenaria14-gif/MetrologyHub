@@ -43,7 +43,7 @@ export const Dashboard = () => {
         const fetchScans = async () => {
             try {
                 const token = localStorage.getItem('jwt_token');
-                const res = await fetch('http://localhost:5001/api/scans', {
+               const res = await fetch(`${import.meta.env.VITE_API_URL}/api/scans`,  {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.status === 401) {

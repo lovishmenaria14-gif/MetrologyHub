@@ -22,7 +22,7 @@ export const Repository = () => {
         const fetchScans = async () => {
             try {
                 const token = localStorage.getItem('jwt_token');
-                const res = await fetch('http://localhost:5001/api/scans', {
+               const res = await fetch(`${import.meta.env.VITE_API_URL}/api/scans`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (res.status === 401) {
@@ -89,7 +89,7 @@ export const Repository = () => {
             alert('This is a mock scan. Upload a real image to generate a PDF.');
             return;
         }
-        window.open(`http://localhost:5001/scans/${scanId}/report`, '_blank');
+       window.open(`${import.meta.env.VITE_API_URL}/scans/${scanId}/report`, '_blank');
     };
 
     const handleExportCSV = () => {

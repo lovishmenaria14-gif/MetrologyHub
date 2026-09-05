@@ -13,7 +13,7 @@ export const Verify = () => {
             try {
                 // Wait 1.5s for dramatic verification effect
                 await new Promise(r => setTimeout(r, 1500));
-                const res = await fetch(`http://localhost:5001/api/public/verify/${id}`);
+               const res = await fetch(`${import.meta.env.VITE_API_URL}/api/public/verify/${id}`);
                 if (res.ok) {
                     const data = await res.json();
                     setStatus(data);
