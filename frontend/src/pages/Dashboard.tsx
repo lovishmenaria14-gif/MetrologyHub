@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
-import { ShieldCheck, AlertTriangle, FileScan, Sparkles, Map, Target, Trophy, Medal, Award } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, FileScan, Sparkles, Map, Target, Trophy, Medal, Award, Activity } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { Button } from '../components/ui/Button';
 import { useNavigate } from 'react-router-dom';
@@ -124,16 +124,13 @@ export const Dashboard = () => {
                     <h1 className="page-title">{isHindi ? 'डैशबोर्ड अवलोकन' : 'Dashboard Overview'}</h1>
                     <p className="page-subtitle">{isHindi ? 'लीगल मेट्रोलॉजी अनुपालन की वास्तविक समय निगरानी।' : 'Real-time monitoring of Legal Metrology compliance.'}</p>
                 </div>
-                <div
-                    style={{ padding: '12px 20px', background: 'var(--primary-light)', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: 12, border: '1px solid var(--primary)', cursor: 'pointer', transition: 'all 0.3s ease' }}
-                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                    <Sparkles className="text-brand" size={20} style={{ animation: 'pulse 2s infinite' }} />
-                    <div style={{ position: 'relative', overflow: 'hidden', height: '20px', width: 'min(300px, 100%)' }}>
-                        <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary)', position: 'absolute', top: 0, left: 0, animation: 'slideUpFade 0.5s ease-out forwards' }} key={insightIndex}>
-                            {insights[insightIndex]}
-                        </p>
+                <div className="dashboard-insight" role="status" aria-live="polite">
+                    <div className="dashboard-insight-icon">
+                        <Sparkles size={18} />
+                    </div>
+                    <div className="dashboard-insight-copy">
+                        <span className="dashboard-insight-label"><Activity size={13} /> Compliance signal</span>
+                        <p key={insightIndex}>{insights[insightIndex].replace('Copilot Insight: ', '').replace(/^को-पायलट इनसाइट: /, '')}</p>
                     </div>
                 </div>
             </div>
