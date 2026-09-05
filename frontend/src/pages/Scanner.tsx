@@ -659,7 +659,7 @@ export const Scanner = () => {
                         <h2 className="mb-4">Govt QR Certificate</h2>
                         <p className="text-muted mb-6">Scan to verify this manufacturer's compliance on the public portal.</p>
                         <div style={{ background: 'white', padding: 24, borderRadius: 16, display: 'inline-block' }}>
-                            <QRCode value={`http://localhost:5173/verify/${qrModal.id}`} size={200} />
+                         <QRCode value={`${window.location.origin}/verify/${qrModal.id}`} size={200} />
                         </div>
                         <p style={{ marginTop: 24, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Certificate ID: {qrModal.id}</p>
                     </Card>
