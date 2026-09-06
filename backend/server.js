@@ -1324,9 +1324,9 @@ app.get(
         ).toLocaleString()
       ],
       [
-        'Inspecting Officer',
-        'Automated Metrology System'
-      ],
+  'Inspecting Officer',
+  req.user?.name || 'Authorised Officer'
+],
       [
         'Product / File',
         scan.filename ||
