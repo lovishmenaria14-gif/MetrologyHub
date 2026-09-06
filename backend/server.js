@@ -494,6 +494,7 @@ app.post('/api/register', async (req, res) => {
     });
 
   } catch (err) {
+
     console.error(
       'Registration error:',
       err
@@ -571,6 +572,7 @@ app.post(
     // --------------------------------------------------------
 
     if (!text) {
+
       if (!req.file) {
         return res.status(400).json({
           error: 'No image uploaded'
@@ -588,6 +590,7 @@ app.post(
       );
 
     try {
+
       let fields = null;
 
       // ======================================================
@@ -631,6 +634,7 @@ app.post(
         if (process.env.GEMINI_API_KEY) {
 
           try {
+
             const {
               GoogleGenerativeAI
             } = require(
@@ -899,10 +903,6 @@ app.get(
 
     try {
 
-      // ------------------------------------------------------
-      // Fetch scans that have GPS coordinates
-      // ------------------------------------------------------
-
       const rows =
         await dbClient.all(`
           SELECT
@@ -925,20 +925,12 @@ app.get(
 
       const offenders = {};
 
-      // ------------------------------------------------------
-      // Process every located inspection
-      // ------------------------------------------------------
-
       rows.forEach((r) => {
 
         const fields =
           r.fields
             ? JSON.parse(r.fields)
             : {};
-
-        // ----------------------------------------------------
-        // Only actual mandatory declaration fields
-        // ----------------------------------------------------
 
         const requiredFields = [
           'mrp',
@@ -956,24 +948,10 @@ app.get(
         const isCompliant =
           missingFields.length === 0;
 
-        // ----------------------------------------------------
-        // Heat intensity
-        //
-        // Compliant:
-        // Low intensity
-        //
-        // Violation:
-        // High intensity
-        // ----------------------------------------------------
-
         const intensity =
           isCompliant
             ? 0.15
             : 1.0;
-
-        // ----------------------------------------------------
-        // Real GPS heatmap point
-        // ----------------------------------------------------
 
         heatData.push([
           Number(r.latitude),
@@ -981,11 +959,8 @@ app.get(
           intensity
         ]);
 
-        // ----------------------------------------------------
-        // Detailed inspection marker
-        // ----------------------------------------------------
-
         inspections.push({
+
           id: r.id,
 
           latitude:
@@ -1008,10 +983,6 @@ app.get(
           created_at:
             r.created_at
         });
-
-        // ----------------------------------------------------
-        // Repeat offender calculation
-        // ----------------------------------------------------
 
         if (
           !isCompliant &&
@@ -1039,14 +1010,11 @@ app.get(
         }
       });
 
-      // ------------------------------------------------------
-      // Repeat offenders
-      // ------------------------------------------------------
-
       const repeatOffenders =
         Object.keys(offenders)
           .map(
             (manufacturer) => ({
+
               manufacturer:
                 manufacturer.toUpperCase(),
 
@@ -1066,15 +1034,9 @@ app.get(
               a.violations
           );
 
-      // ------------------------------------------------------
-      // Response
-      // ------------------------------------------------------
-
       return res.json({
         heatmap: heatData,
-
         inspections,
-
         repeatOffenders
       });
 
@@ -1121,6 +1083,7 @@ app.get(
 
       const parsed =
         rows.map((r) => ({
+
           ...r,
 
           fields:
@@ -1199,8 +1162,7 @@ app.get(
   '/scans/:id/report',
   async (req, res) => {
 
-    const id =
-      req.params.id;
+    const id = req.params.id;
 
     let scan = null;
 
@@ -1224,9 +1186,37 @@ app.get(
 
     if (!scan) {
       return res.status(404).json({
-        error: 'not found'
+        error: 'Scan not found'
       });
     }
+
+    // ========================================================
+    // PREPARE DATA
+    // ========================================================
+
+    const fieldsObj =
+      typeof scan.fields === 'string'
+        ? JSON.parse(scan.fields)
+        : scan.fields || {};
+
+    const requiredFields = [
+      'mrp',
+      'net_quantity',
+      'manufacturer',
+      'month_year'
+    ];
+
+    const missingFields =
+      requiredFields.filter(
+        field => !fieldsObj[field]
+      );
+
+    const isCompliant =
+      missingFields.length === 0;
+
+    // ========================================================
+    // PDF RESPONSE
+    // ========================================================
 
     res.setHeader(
       'Content-Type',
@@ -1239,17 +1229,21 @@ app.get(
     );
 
     const doc =
-      new PDFDocument();
+      new PDFDocument({
+        size: 'A4',
+        margin: 50,
+        bufferPages: true
+      });
 
     doc.pipe(res);
 
-    // --------------------------------------------------------
-    // Header
-    // --------------------------------------------------------
+    // ========================================================
+    // HEADER
+    // ========================================================
 
     doc
-      .fontSize(20)
       .font('Helvetica-Bold')
+      .fontSize(16)
       .text(
         'GOVERNMENT OF INDIA',
         {
@@ -1258,7 +1252,7 @@ app.get(
       );
 
     doc
-      .fontSize(14)
+      .fontSize(12)
       .text(
         'DEPARTMENT OF LEGAL METROLOGY',
         {
@@ -1266,115 +1260,176 @@ app.get(
         }
       );
 
-    doc.moveDown(2);
+    doc.moveDown(0.3);
 
     doc
-      .fontSize(16)
+      .fontSize(9)
+      .font('Helvetica')
       .text(
-        'OFFICIAL COMPLIANCE REPORT',
+        'LEGAL METROLOGY HUB',
         {
-          underline: true,
           align: 'center'
         }
       );
 
-    doc.moveDown(2);
+    doc.moveDown(1);
 
-    // --------------------------------------------------------
-    // Metadata
-    // --------------------------------------------------------
+    // ========================================================
+    // REPORT TITLE
+    // ========================================================
 
     doc
+      .font('Helvetica-Bold')
+      .fontSize(15)
+      .text(
+        'AUTOMATED PACKAGE INSPECTION',
+        {
+          align: 'center'
+        }
+      );
+
+    doc
+      .fontSize(13)
+      .text(
+        'COMPLIANCE INSPECTION REPORT',
+        {
+          align: 'center'
+        }
+      );
+
+    doc.moveDown(1);
+
+    // ========================================================
+    // REPORT INFORMATION
+    // ========================================================
+
+    doc
+      .font('Helvetica-Bold')
       .fontSize(12)
-      .font('Helvetica-Bold')
       .text(
-        'Scan ID:',
-        {
-          continued: true
-        }
-      )
-      .font('Helvetica')
-      .text(
-        ` ${scan.id}`
+        'REPORT INFORMATION'
       );
 
-    doc
-      .font('Helvetica-Bold')
-      .text(
-        'Date & Time:',
-        {
-          continued: true
-        }
-      )
-      .font('Helvetica')
-      .text(
-        ` ${new Date(
+    doc.moveDown(0.4);
+
+    const info = [
+      [
+        'Scan ID',
+        scan.id
+      ],
+      [
+        'Date & Time',
+        new Date(
           scan.created_at
-        ).toLocaleString()}`
-      );
-
-    doc
-      .font('Helvetica-Bold')
-      .text(
-        'Inspecting Officer:',
-        {
-          continued: true
-        }
-      )
-      .font('Helvetica')
-      .text(
-        ' Automated Metrology System'
-      );
-
-    // --------------------------------------------------------
-    // GPS information
-    // --------------------------------------------------------
+        ).toLocaleString()
+      ],
+      [
+        'Inspecting Officer',
+        'Automated Metrology System'
+      ],
+      [
+        'Product / File',
+        scan.filename ||
+        'Not available'
+      ]
+    ];
 
     if (
       scan.latitude !== null &&
       scan.longitude !== null
     ) {
 
-      doc
-        .font('Helvetica-Bold')
-        .text(
-          'Inspection Location:',
-          {
-            continued: true
-          }
-        )
-        .font('Helvetica')
-        .text(
-          ` ${scan.latitude}, ${scan.longitude}`
-        );
+      info.push([
+        'Inspection Location',
+        `${scan.latitude}, ${scan.longitude}`
+      ]);
     }
 
-    doc.moveDown(1.5);
+    info.forEach(
+      ([label, value]) => {
 
-    // --------------------------------------------------------
-    // Extracted declarations
-    // --------------------------------------------------------
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(10)
+          .text(
+            `${label}: `,
+            {
+              continued: true
+            }
+          )
+          .font('Helvetica')
+          .text(
+            value || 'Not available'
+          );
+      }
+    );
+
+    doc.moveDown(1);
+
+    // ========================================================
+    // COMPLIANCE STATUS
+    // ========================================================
 
     doc
-      .fontSize(14)
       .font('Helvetica-Bold')
+      .fontSize(12)
       .text(
-        '1. Extracted Package Declarations',
-        {
-          underline: true
-        }
+        'INSPECTION RESULT'
       );
 
     doc.moveDown(0.5);
 
-    const fieldsObj =
-      typeof scan.fields === 'string'
-        ? JSON.parse(
-            scan.fields
-          )
-        : scan.fields || {};
+    if (isCompliant) {
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(14)
+        .text(
+          'STATUS: COMPLIANT',
+          {
+            align: 'center'
+          }
+        );
+
+    } else {
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(14)
+        .text(
+          'STATUS: VIOLATION DETECTED',
+          {
+            align: 'center'
+          }
+        );
+
+      doc.moveDown(0.5);
+
+      doc
+        .font('Helvetica')
+        .fontSize(10)
+        .text(
+          'One or more mandatory package declarations could not be identified during automated inspection.'
+        );
+    }
+
+    doc.moveDown(1);
+
+    // ========================================================
+    // EXTRACTED PACKAGE DECLARATIONS
+    // ========================================================
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text(
+        '1. EXTRACTED PACKAGE DECLARATIONS'
+      );
+
+    doc.moveDown(0.5);
 
     const fieldMapping = {
+
       mrp:
         'Maximum Retail Price (MRP)',
 
@@ -1385,202 +1440,300 @@ app.get(
         'Manufacturer Details',
 
       month_year:
-        'Mfg. Date'
+        'Manufacturing Date',
+
+      batch:
+        'Batch Number',
+
+      best_before:
+        'Best Before'
     };
 
-    Object.keys(
-      fieldsObj
-    ).forEach((k) => {
+    Object.keys(fieldMapping)
+      .forEach(key => {
 
-      const label =
-        fieldMapping[k] ||
-        k.toUpperCase();
+        const value =
+          fieldsObj[key];
+
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(10)
+          .text(
+            `${fieldMapping[key]}: `,
+            {
+              continued: true
+            }
+          )
+          .font('Helvetica')
+          .text(
+            value
+              ? String(value)
+              : 'NOT DETECTED'
+          );
+
+        doc.moveDown(0.25);
+      });
+
+    doc.moveDown(1);
+
+    // ========================================================
+    // DECLARATION VERIFICATION
+    // ========================================================
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text(
+        '2. MANDATORY DECLARATION VERIFICATION'
+      );
+
+    doc.moveDown(0.5);
+
+    requiredFields.forEach(
+      field => {
+
+        const value =
+          fieldsObj[field];
+
+        const label =
+          fieldMapping[field] ||
+          field;
+
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(10)
+          .text(
+            `${label}: `,
+            {
+              continued: true
+            }
+          )
+          .font('Helvetica')
+          .text(
+            value
+              ? 'PRESENT'
+              : 'MISSING'
+          );
+
+        doc.moveDown(0.25);
+      }
+    );
+
+    // ========================================================
+    // VIOLATION SUMMARY
+    // ========================================================
+
+    if (!isCompliant) {
+
+      doc.moveDown(1);
 
       doc
-        .fontSize(11)
         .font('Helvetica-Bold')
+        .fontSize(12)
         .text(
-          `${label}: `,
-          {
-            continued: true
-          }
-        )
-        .font('Helvetica')
-        .text(
-          `${
-            fieldsObj[k] ||
-            'MISSING (VIOLATION)'
-          }`
+          '3. INSPECTION FINDINGS'
         );
 
-      doc.moveDown(0.2);
-    });
+      doc.moveDown(0.5);
 
-    // --------------------------------------------------------
-    // Correct compliance check
-    // --------------------------------------------------------
+      doc
+        .font('Helvetica')
+        .fontSize(10)
+        .text(
+          'The following mandatory declarations were not detected:'
+        );
 
-    const requiredFields = [
-      'mrp',
-      'net_quantity',
-      'manufacturer',
-      'month_year'
-    ];
+      doc.moveDown(0.3);
 
-    const missingFields =
-      requiredFields.filter(
-        (field) =>
-          !fieldsObj[field]
-      );
+      missingFields.forEach(
+        field => {
 
-    const isCompliant =
-      missingFields.length === 0;
-
-    doc.moveDown(1.5);
-
-    doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .text(
-        `Compliance Status: ${
-          isCompliant
-            ? 'COMPLIANT'
-            : 'NON-COMPLIANT'
-        }`,
-        {
-          underline: true
+          doc
+            .font('Helvetica-Bold')
+            .fontSize(10)
+            .text(
+              `- ${
+                fieldMapping[field] ||
+                field
+              }`
+            );
         }
       );
 
-    // --------------------------------------------------------
-    // Raw OCR evidence
-    // --------------------------------------------------------
+      doc.moveDown(0.5);
 
-    doc.moveDown(1.5);
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .text(
+          'These findings are generated automatically from the package inspection data and should be reviewed by an authorised Legal Metrology officer before any enforcement action.'
+        );
+    }
+
+    // ========================================================
+    // RAW OCR EVIDENCE
+    // ========================================================
+
+    doc.addPage();
 
     doc
-      .fontSize(14)
       .font('Helvetica-Bold')
+      .fontSize(12)
       .text(
-        '2. Raw OCR Text Evidence',
-        {
-          underline: true
-        }
+        '4. RAW OCR TEXT EVIDENCE'
       );
 
     doc.moveDown(0.5);
 
     doc
-      .fontSize(10)
       .font('Courier')
+      .fontSize(8.5)
       .text(
         scan.text ||
-        '(none)'
-      );
-
-    // --------------------------------------------------------
-    // Legal notice
-    // --------------------------------------------------------
-
-    if (
-      !isCompliant &&
-      process.env.GEMINI_API_KEY
-    ) {
-
-      try {
-
-        const {
-          GoogleGenerativeAI
-        } = require(
-          '@google/generative-ai'
-        );
-
-        const genAI =
-          new GoogleGenerativeAI(
-            process.env.GEMINI_API_KEY
-          );
-
-        const model =
-          genAI.getGenerativeModel({
-            model:
-              'gemini-1.5-flash'
-          });
-
-        const prompt =
-          `Draft a formal, extremely strict legal notice from the Department of Legal Metrology to the Manufacturer for violation of Rule 6 of the Legal Metrology (Packaged Commodities) Rules, 2011. The product scan ID is ${scan.id}. The following declarations were found missing during a field inspection: ${missingFields.join(', ')}. State very clearly that a penalty of Rs. 25,000 is applicable under Section 36 of the Legal Metrology Act, 2009 for this offense. Output strictly as standard letter plain text without ANY markdown formatting (no asterisks, no hashes, no bold). Include a standard closing block for the Inspector's signature.`;
-
-        const result =
-          await model.generateContent(
-            prompt
-          );
-
-        let noticeText =
-          result.response.text();
-
-        noticeText =
-          noticeText.replace(
-            /\*/g,
-            ''
-          );
-
-        doc.addPage();
-
-        doc
-          .fontSize(16)
-          .font('Helvetica-Bold')
-          .text(
-            'LEGAL NOTICE UNDER SECTION 36',
-            {
-              underline: true,
-              align: 'center'
-            }
-          );
-
-        doc.moveDown(2);
-
-        doc
-          .fontSize(11)
-          .font('Helvetica')
-          .text(
-            noticeText,
-            {
-              align: 'justify',
-              lineGap: 4
-            }
-          );
-
-      } catch (err) {
-
-        console.error(
-          'Failed to generate Gemini notice:',
-          err
-        );
-      }
-    }
-
-    // --------------------------------------------------------
-    // Footer
-    // --------------------------------------------------------
-
-    doc.moveDown(3);
-
-    doc
-      .fontSize(10)
-      .font('Helvetica-Oblique')
-      .text(
-        'This is a digitally generated notice powered by the Legal Metrology Hub.',
+        '(No OCR text available)',
         {
-          align: 'center'
+          lineGap: 2
         }
       );
 
-    doc.text(
-      'Valid only for simulation purposes.',
-      {
-        align: 'center',
-        textWidth: 200
-      }
-    );
+    // ========================================================
+    // DIGITAL VERIFICATION
+    // ========================================================
+
+    doc.moveDown(1);
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .text(
+        '5. DIGITAL VERIFICATION'
+      );
+
+    doc.moveDown(0.5);
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9)
+      .text(
+        'Record ID: ',
+        {
+          continued: true
+        }
+      )
+      .font('Helvetica')
+      .text(
+        scan.id
+      );
+
+    doc
+      .font('Helvetica-Bold')
+      .text(
+        'Cryptographic Signature: ',
+        {
+          continued: true
+        }
+      )
+      .font('Courier')
+      .fontSize(8)
+      .text(
+        fieldsObj.crypto_signature ||
+        'UNVERIFIED_LEGACY_RECORD'
+      );
+
+    if (
+      scan.latitude !== null &&
+      scan.longitude !== null
+    ) {
+
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .moveDown(0.3)
+        .text(
+          `GPS Coordinates: ${scan.latitude}, ${scan.longitude}`
+        );
+    }
+
+    // ========================================================
+    // RECORD INTEGRITY
+    // ========================================================
+
+    doc.moveDown(1);
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .text(
+        'RECORD INTEGRITY'
+      );
+
+    doc.moveDown(0.3);
+
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .text(
+        'This report contains machine-extracted inspection information and cryptographic record metadata. The information should be independently verified before being used for regulatory or enforcement purposes.'
+      );
+
+    // ========================================================
+    // FOOTER
+    // ========================================================
+
+    const range =
+      doc.bufferedPageRange();
+
+    for (
+      let i = range.start;
+      i <
+      range.start + range.count;
+      i++
+    ) {
+
+      doc.switchToPage(i);
+
+      doc
+        .font('Helvetica-Oblique')
+        .fontSize(8)
+        .text(
+          'Legal Metrology Hub - Automated Inspection System',
+          50,
+          760,
+          {
+            align: 'center',
+            width: 495
+          }
+        );
+
+      doc
+        .fontSize(8)
+        .text(
+          'FOR SIMULATION / DEMONSTRATION PURPOSES ONLY - NOT AN OFFICIAL GOVERNMENT DOCUMENT',
+          50,
+          775,
+          {
+            align: 'center',
+            width: 495
+          }
+        );
+
+      doc
+        .font('Helvetica')
+        .fontSize(8)
+        .text(
+          `Page ${i + 1} of ${range.count}`,
+          50,
+          790,
+          {
+            align: 'center',
+            width: 495
+          }
+        );
+    }
+
+    // ========================================================
+    // FINISH PDF
+    // ========================================================
 
     doc.end();
   }
@@ -1671,7 +1824,6 @@ app.get(
           fieldsObj.crypto_signature ||
           'UNVERIFIED_LEGACY_RECORD',
 
-        // Useful for verification page
         latitude:
           scan.latitude,
 
