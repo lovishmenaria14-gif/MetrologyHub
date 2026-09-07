@@ -7,11 +7,18 @@ import {
     Sparkles,
     Map as MapIcon,
     Target,
-    Trophy,
-    Medal,
-    Award,
     Activity,
-    MapPin
+    MapPin,
+    ArrowRight,
+    ClipboardCheck,
+    Clock,
+    CheckCircle2,
+    XCircle,
+    RefreshCw,
+    Search,
+    TrendingUp,
+    Users,
+    Building2
 } from 'lucide-react';
 
 import {
@@ -59,6 +66,16 @@ type AnalyticsData = {
     }[];
 };
 
+type HistoryItem = {
+    id: string;
+    status: 'Compliant' | 'Violation';
+    product: string;
+    date?: string;
+    rawFields: Record<string, any>;
+    latitude?: number;
+    longitude?: number;
+};
+
 export const Dashboard = () => {
     const navigate = useNavigate();
 
@@ -66,545 +83,457 @@ export const Dashboard = () => {
         localStorage.getItem('appLang') || 'English'
     );
 
-    const [animatedNumbers, setAnimatedNumbers] =
-        useState(false);
+    const [animatedNumbers, setAnimatedNumbers] = useState(false);
 
-    const [insightIndex, setInsightIndex] =
-        useState(0);
+    const [history, setHistory] = useState<HistoryItem[]>([]);
 
-    const [history, setHistory] =
-        useState<any[]>([]);
+    const [analytics, setAnalytics] = useState<AnalyticsData>({
+        heatmap: [],
+        inspections: [],
+        repeatOffenders: []
+    });
 
-    const [analytics, setAnalytics] =
-        useState<AnalyticsData>({
-            heatmap: [],
-            inspections: [],
-            repeatOffenders: []
-        });
+    const [analyticsLoading, setAnalyticsLoading] = useState(true);
+    const [analyticsError, setAnalyticsError] = useState('');
 
-    const [analyticsLoading, setAnalyticsLoading] =
-        useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
-    const [analyticsError, setAnalyticsError] =
-        useState('');
-
-    // ========================================================
-    // LANGUAGE + INSIGHTS
-    // ========================================================
+    // =========================================================
+    // LANGUAGE
+    // =========================================================
 
     useEffect(() => {
-        const h = () =>
+        const handleLanguageChange = () => {
             setLang(
-                localStorage.getItem('appLang') ||
-                'English'
+                localStorage.getItem('appLang') || 'English'
             );
+        };
 
-        window.addEventListener('storage', h);
-
-        setTimeout(
-            () => setAnimatedNumbers(true),
-            100
+        window.addEventListener(
+            'storage',
+            handleLanguageChange
         );
 
-        const insightTimer =
-            setInterval(() => {
-                setInsightIndex(
-                    prev => (prev + 1) % 3
-                );
-            }, 5000);
+        setTimeout(() => {
+            setAnimatedNumbers(true);
+        }, 100);
 
         return () => {
             window.removeEventListener(
                 'storage',
-                h
+                handleLanguageChange
             );
-
-            clearInterval(insightTimer);
         };
     }, []);
 
-    const isHindi =
-        lang === 'Hindi';
+    const isHindi = lang === 'Hindi';
 
-    // ========================================================
-    // INSIGHTS
-    // ========================================================
-
-    const insights = isHindi
-        ? [
-            'को-पायलट इनसाइट: "MRP उल्लंघन आज 20% बढ़ गए हैं।"',
-            'को-पायलट इनसाइट: "स्थानीय किराना स्टोर में अनुपालन दर में 5% का सुधार हुआ है।"',
-            'को-पायलट इनसाइट: "चेतावनी - पैक किए गए स्नैक्स में फोंट आकार के मुद्दे अक्सर आ रहे हैं।"'
-        ]
-        : [
-            'Copilot Insight: "MRP Violations are up 20% today."',
-            'Copilot Insight: "Local grocery stores improved compliance by 5%."',
-            'Copilot Insight: "Warning - Font size issues are frequent in packaged snacks."'
-        ];
-
-    // ========================================================
+    // =========================================================
     // FETCH SCANS
-    // ========================================================
+    // =========================================================
 
-    useEffect(() => {
-        const fetchScans = async () => {
-            try {
-                const token =
-                    localStorage.getItem(
-                        'jwt_token'
-                    );
+    const fetchScans = async () => {
+        try {
+            const token =
+                localStorage.getItem('jwt_token');
 
-                const res = await fetch(
-                    `${import.meta.env.VITE_API_URL}/api/scans`,
-                    {
-                        headers: {
-                            Authorization:
-                                `Bearer ${token}`
-                        }
+            const res = await fetch(
+                `${import.meta.env.VITE_API_URL}/api/scans`,
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${token}`
                     }
+                }
+            );
+
+            if (res.status === 401) {
+                localStorage.removeItem('auth');
+                window.location.href = '/login';
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error(
+                    `Scans request failed: ${res.status}`
+                );
+            }
+
+            const data = await res.json();
+
+            const formatted = data.map((h: any) => {
+                const fields = h.fields || {};
+
+                /*
+                 * Compliance is based on the same required
+                 * fields used by your existing application.
+                 *
+                 * This intentionally does NOT use Object.values()
+                 * because crypto_signature may exist inside fields.
+                 */
+
+                const requiredFields = [
+                    'mrp',
+                    'net_quantity',
+                    'manufacturer',
+                    'month_year'
+                ];
+
+                const isCompliant =
+                    requiredFields.every(
+                        field => !!fields[field]
+                    );
+
+                return {
+                    id: h.id,
+                    status: isCompliant
+                        ? 'Compliant'
+                        : 'Violation',
+                    product:
+                        h.filename ||
+                        'Unknown Product',
+                    date: h.created_at,
+                    rawFields: fields,
+                    latitude: h.latitude,
+                    longitude: h.longitude
+                };
+            });
+
+            setHistory(formatted);
+
+        } catch (error) {
+            console.error(
+                'Failed to fetch scans:',
+                error
+            );
+
+            const stored =
+                localStorage.getItem(
+                    'metrology_history'
                 );
 
-                if (res.status === 401) {
-                    localStorage.removeItem(
-                        'auth'
-                    );
-
-                    window.location.href =
-                        '/login';
-
-                    return;
-                }
-
-                if (res.ok) {
-                    const data =
-                        await res.json();
-
-                    setHistory(
-                        data.map(
-                            (h: any) => {
-
-                                const fields =
-                                    h.fields || {};
-
-                                // IMPORTANT:
-                                // Do NOT use Object.values()
-                                // because crypto_signature
-                                // is also stored in fields.
-
-                                const requiredFields = [
-                                    'mrp',
-                                    'net_quantity',
-                                    'manufacturer',
-                                    'month_year'
-                                ];
-
-                                const isCompliant =
-                                    requiredFields.every(
-                                        field =>
-                                            !!fields[field]
-                                    );
-
-                                return {
-                                    id: h.id,
-
-                                    status:
-                                        isCompliant
-                                            ? 'Compliant'
-                                            : 'Violation',
-
-                                    product:
-                                        h.filename ||
-                                        'Unknown Product',
-
-                                    date:
-                                        h.created_at,
-
-                                    rawFields:
-                                        fields,
-
-                                    latitude:
-                                        h.latitude,
-
-                                    longitude:
-                                        h.longitude
-                                };
-                            }
-                        )
-                    );
-                }
-
-            } catch (e) {
-
-                console.error(
-                    'Failed to fetch scans:',
-                    e
-                );
-
-                const stored =
-                    localStorage.getItem(
-                        'metrology_history'
-                    );
-
-                if (stored) {
+            if (stored) {
+                try {
                     setHistory(
                         JSON.parse(stored)
                     );
+                } catch {
+                    console.error(
+                        'Invalid stored history'
+                    );
                 }
             }
-        };
+        }
+    };
 
-        fetchScans();
-    }, []);
+    // =========================================================
+    // FETCH ANALYTICS
+    // =========================================================
 
-    // ========================================================
-    // FETCH REAL ANALYTICS
-    // ========================================================
+    const fetchAnalytics = async () => {
+        try {
+            setAnalyticsLoading(true);
+            setAnalyticsError('');
+
+            const token =
+                localStorage.getItem('jwt_token');
+
+            const res = await fetch(
+                `${import.meta.env.VITE_API_URL}/api/analytics`,
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${token}`
+                    }
+                }
+            );
+
+            if (res.status === 401) {
+                localStorage.removeItem('auth');
+                window.location.href = '/login';
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error(
+                    `Analytics request failed: ${res.status}`
+                );
+            }
+
+            const data = await res.json();
+
+            setAnalytics({
+                heatmap:
+                    Array.isArray(data.heatmap)
+                        ? data.heatmap
+                        : [],
+
+                inspections:
+                    Array.isArray(data.inspections)
+                        ? data.inspections
+                        : [],
+
+                repeatOffenders:
+                    Array.isArray(
+                        data.repeatOffenders
+                    )
+                        ? data.repeatOffenders
+                        : []
+            });
+
+        } catch (error) {
+            console.error(
+                'Analytics error:',
+                error
+            );
+
+            setAnalyticsError(
+                'Unable to load live inspection locations.'
+            );
+
+        } finally {
+            setAnalyticsLoading(false);
+        }
+    };
+
+    // =========================================================
+    // INITIAL DATA LOAD
+    // =========================================================
 
     useEffect(() => {
-
-        const fetchAnalytics =
-            async () => {
-
-                try {
-
-                    setAnalyticsLoading(
-                        true
-                    );
-
-                    setAnalyticsError('');
-
-                    const token =
-                        localStorage.getItem(
-                            'jwt_token'
-                        );
-
-                    const res =
-                        await fetch(
-                            `${import.meta.env.VITE_API_URL}/api/analytics`,
-                            {
-                                headers: {
-                                    Authorization:
-                                        `Bearer ${token}`
-                                }
-                            }
-                        );
-
-                    if (res.status === 401) {
-
-                        localStorage.removeItem(
-                            'auth'
-                        );
-
-                        window.location.href =
-                            '/login';
-
-                        return;
-                    }
-
-                    if (!res.ok) {
-                        throw new Error(
-                            `Analytics request failed: ${res.status}`
-                        );
-                    }
-
-                    const data =
-                        await res.json();
-
-                    setAnalytics({
-                        heatmap:
-                            Array.isArray(
-                                data.heatmap
-                            )
-                                ? data.heatmap
-                                : [],
-
-                        inspections:
-                            Array.isArray(
-                                data.inspections
-                            )
-                                ? data.inspections
-                                : [],
-
-                        repeatOffenders:
-                            Array.isArray(
-                                data.repeatOffenders
-                            )
-                                ? data.repeatOffenders
-                                : []
-                    });
-
-                } catch (err) {
-
-                    console.error(
-                        'Analytics error:',
-                        err
-                    );
-
-                    setAnalyticsError(
-                        'Unable to load live inspection locations.'
-                    );
-
-                } finally {
-
-                    setAnalyticsLoading(
-                        false
-                    );
-                }
-            };
-
+        fetchScans();
         fetchAnalytics();
-
     }, []);
 
-    // ========================================================
-    // COMPUTED DASHBOARD DATA
-    // ========================================================
+    // =========================================================
+    // REFRESH
+    // =========================================================
 
-    const computed =
-        useMemo(() => {
+    const refreshDashboard = async () => {
+        setRefreshing(true);
 
-            const total =
-                history.length;
-
-            const comps =
-                history.filter(
-                    (h: any) =>
-                        h.status ===
-                        'Compliant'
-                ).length;
-
-            const viols =
-                total - comps;
-
-            const rate =
-                total > 0
-                    ? Math.round(
-                        (comps / total) *
-                        100
-                    )
-                    : 100;
-
-            let noMrp = 0;
-            let noDate = 0;
-            let badAddress = 0;
-
-            const badFont =
-                Math.floor(
-                    viols / 3
-                );
-
-            history.forEach(
-                (h: any) => {
-
-                    if (
-                        h.status ===
-                            'Violation' &&
-                        h.rawFields
-                    ) {
-
-                        if (
-                            !h.rawFields.mrp
-                        ) {
-                            noMrp++;
-                        }
-
-                        if (
-                            !h.rawFields.month_year
-                        ) {
-                            noDate++;
-                        }
-
-                        if (
-                            !h.rawFields.manufacturer
-                        ) {
-                            badAddress++;
-                        }
-                    }
-                }
-            );
-
-            const bar =
-                total > 0
-                    ? [
-                        {
-                            name:
-                                'Missing MRP',
-                            val:
-                                noMrp
-                        },
-                        {
-                            name:
-                                'No Mfg Date',
-                            val:
-                                noDate
-                        },
-                        {
-                            name:
-                                'Font Size',
-                            val:
-                                badFont
-                        },
-                        {
-                            name:
-                                'No Address',
-                            val:
-                                badAddress
-                        }
-                    ]
-                    : [
-                        {
-                            name:
-                                'Missing MRP',
-                            val: 0
-                        },
-                        {
-                            name:
-                                'No Mfg Date',
-                            val: 0
-                        },
-                        {
-                            name:
-                                'Font Size',
-                            val: 0
-                        },
-                        {
-                            name:
-                                'No Address',
-                            val: 0
-                        }
-                    ];
-
-            // ------------------------------------------------
-            // Use backend repeat offender data
-            // ------------------------------------------------
-
-            let offenders =
-                analytics.repeatOffenders
-                    .map(
-                        (o) => ({
-                            name:
-                                o.manufacturer,
-
-                            violations:
-                                o.violations,
-
-                            trend:
-                                '+1'
-                        })
-                    )
-                    .slice(0, 3);
-
-            if (
-                offenders.length === 0
-            ) {
-                offenders = [
-                    {
-                        name:
-                            'No violations yet',
-
-                        violations: 0,
-
-                        trend: '-'
-                    }
-                ];
-            }
-
-            // ------------------------------------------------
-            // Weekly timeline
-            // ------------------------------------------------
-
-            const days = [
-                'Sun',
-                'Mon',
-                'Tue',
-                'Wed',
-                'Thu',
-                'Fri',
-                'Sat'
-            ];
-
-            const timeline =
-                days.map(
-                    d => ({
-                        name: d,
-                        scans: 0,
-                        violations: 0
-                    })
-                );
-
-            history.forEach(
-                (h: any) => {
-
-                    const dt =
-                        new Date(
-                            h.date
-                        );
-
-                    if (
-                        !isNaN(
-                            dt.getTime()
-                        )
-                    ) {
-
-                        const dayIndex =
-                            dt.getDay();
-
-                        timeline[
-                            dayIndex
-                        ].scans += 1;
-
-                        if (
-                            h.status ===
-                            'Violation'
-                        ) {
-                            timeline[
-                                dayIndex
-                            ].violations += 1;
-                        }
-                    }
-                }
-            );
-
-            return {
-                total,
-                comps,
-                viols,
-                rate,
-                bar,
-                offenders,
-                timeline
-            };
-
-        }, [
-            history,
-            analytics.repeatOffenders
+        await Promise.all([
+            fetchScans(),
+            fetchAnalytics()
         ]);
 
-    // ========================================================
-    // MAP CENTER
-    // ========================================================
+        setTimeout(() => {
+            setRefreshing(false);
+        }, 400);
+    };
 
-    const mapCenter =
-        useMemo<
-            [number, number]
-        >(() => {
+    // =========================================================
+    // COMPUTED DATA
+    // =========================================================
 
-            const locations =
-                analytics.inspections
-                    .filter(
-                        item =>
-                            Number.isFinite(
-                                item.latitude
-                            ) &&
-                            Number.isFinite(
-                                item.longitude
-                            )
-                    );
+    const computed = useMemo(() => {
+        const total = history.length;
+
+        const compliant = history.filter(
+            h => h.status === 'Compliant'
+        ).length;
+
+        const violations =
+            total - compliant;
+
+        const complianceRate =
+            total > 0
+                ? Math.round(
+                    (compliant / total) * 100
+                )
+                : 0;
+
+        /*
+         * Real issue categories based on the
+         * actual fields returned by your scanner.
+         */
+
+        let missingMrp = 0;
+        let missingQuantity = 0;
+        let missingManufacturer = 0;
+        let missingDate = 0;
+
+        history.forEach(item => {
+            if (item.status !== 'Violation') {
+                return;
+            }
+
+            const fields =
+                item.rawFields || {};
+
+            if (!fields.mrp) {
+                missingMrp++;
+            }
+
+            if (!fields.net_quantity) {
+                missingQuantity++;
+            }
+
+            if (!fields.manufacturer) {
+                missingManufacturer++;
+            }
+
+            if (!fields.month_year) {
+                missingDate++;
+            }
+        });
+
+        const violationBreakdown = [
+            {
+                name: 'Missing MRP',
+                val: missingMrp
+            },
+            {
+                name: 'Quantity',
+                val: missingQuantity
+            },
+            {
+                name: 'Manufacturer',
+                val: missingManufacturer
+            },
+            {
+                name: 'Mfg. Date',
+                val: missingDate
+            }
+        ];
+
+        /*
+         * Weekly activity
+         */
+
+        const days = [
+            'Sun',
+            'Mon',
+            'Tue',
+            'Wed',
+            'Thu',
+            'Fri',
+            'Sat'
+        ];
+
+        const timeline = days.map(day => ({
+            name: day,
+            scans: 0,
+            violations: 0
+        }));
+
+        history.forEach(item => {
+            if (!item.date) return;
+
+            const date =
+                new Date(item.date);
+
+            if (isNaN(date.getTime())) {
+                return;
+            }
+
+            const day =
+                date.getDay();
+
+            timeline[day].scans++;
 
             if (
-                locations.length > 0
+                item.status ===
+                'Violation'
             ) {
+                timeline[day].violations++;
+            }
+        });
 
+        /*
+         * Today's activity
+         */
+
+        const today = new Date();
+
+        const todayScans =
+            history.filter(item => {
+                if (!item.date) return false;
+
+                const date =
+                    new Date(item.date);
+
+                return (
+                    date.getDate() ===
+                    today.getDate() &&
+                    date.getMonth() ===
+                    today.getMonth() &&
+                    date.getFullYear() ===
+                    today.getFullYear()
+                );
+            });
+
+        const todayViolations =
+            todayScans.filter(
+                item =>
+                    item.status ===
+                    'Violation'
+            ).length;
+
+        /*
+         * Recent inspections
+         */
+
+        const recent =
+            [...history]
+                .sort(
+                    (a, b) =>
+                        new Date(
+                            b.date || 0
+                        ).getTime() -
+                        new Date(
+                            a.date || 0
+                        ).getTime()
+                )
+                .slice(0, 6);
+
+        /*
+         * Review queue
+         */
+
+        const reviewQueue =
+            history.filter(
+                item =>
+                    item.status ===
+                    'Violation'
+            ).length;
+
+        return {
+            total,
+            compliant,
+            violations,
+            complianceRate,
+            missingMrp,
+            missingQuantity,
+            missingManufacturer,
+            missingDate,
+            violationBreakdown,
+            timeline,
+            todayScans: todayScans.length,
+            todayViolations,
+            recent,
+            reviewQueue
+        };
+    }, [history]);
+
+    // =========================================================
+    // MAP CENTER
+    // =========================================================
+
+    const mapCenter =
+        useMemo<[number, number]>(() => {
+            const locations =
+                analytics.inspections.filter(
+                    item =>
+                        Number.isFinite(
+                            item.latitude
+                        ) &&
+                        Number.isFinite(
+                            item.longitude
+                        )
+                );
+
+            if (locations.length > 0) {
                 const lat =
                     locations.reduce(
                         (sum, item) =>
@@ -623,31 +552,26 @@ export const Dashboard = () => {
                     ) /
                     locations.length;
 
-                return [
-                    lat,
-                    lng
-                ];
+                return [lat, lng];
             }
 
-            // India center fallback
             return [
                 22.5937,
                 78.9629
             ];
-
         }, [
             analytics.inspections
         ]);
 
-    // ========================================================
-    // HOTSPOT CIRCLES
-    // ========================================================
+    // =========================================================
+    // VIOLATION LOCATIONS
+    // =========================================================
 
     const violationLocations =
         analytics.inspections.filter(
             item =>
                 item.status ===
-                    'NON_COMPLIANT' &&
+                'NON_COMPLIANT' &&
                 Number.isFinite(
                     item.latitude
                 ) &&
@@ -656,235 +580,497 @@ export const Dashboard = () => {
                 )
         );
 
-    // ========================================================
+    // =========================================================
+    // REPEAT OFFENDERS
+    // =========================================================
+
+    const offenders =
+        analytics.repeatOffenders
+            .slice(0, 5);
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    const formatDate = (
+        date?: string
+    ) => {
+        if (!date) {
+            return 'Unknown date';
+        }
+
+        const parsed =
+            new Date(date);
+
+        if (
+            isNaN(
+                parsed.getTime()
+            )
+        ) {
+            return date;
+        }
+
+        return parsed.toLocaleString(
+            isHindi
+                ? 'hi-IN'
+                : 'en-IN',
+            {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }
+        );
+    };
+
+    const getProductName = (
+        name: string
+    ) => {
+        if (!name) {
+            return 'Unknown Product';
+        }
+
+        if (name.length > 28) {
+            return (
+                name.substring(0, 28) +
+                '...'
+            );
+        }
+
+        return name;
+    };
+
+    // =========================================================
     // RENDER
-    // ========================================================
+    // =========================================================
 
     return (
         <div>
 
-            {/* ==================================================
+            {/* =================================================
                 HEADER
-            ================================================== */}
+            ================================================= */}
 
-            <div className="d-flex justify-between align-center mb-6">
+            <div
+                className="d-flex justify-between align-center mb-6"
+                style={{
+                    flexWrap: 'wrap',
+                    gap: 16
+                }}
+            >
 
                 <div>
 
+                    <div
+                        className="d-flex align-center gap-2"
+                        style={{
+                            marginBottom: 6
+                        }}
+                    >
+
+                        <div
+                            style={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 12,
+                                background:
+                                    'var(--primary-light)',
+                                color:
+                                    'var(--primary)',
+                                display: 'flex',
+                                alignItems:
+                                    'center',
+                                justifyContent:
+                                    'center'
+                            }}
+                        >
+                            <ShieldCheck
+                                size={22}
+                            />
+                        </div>
+
+                        <span
+                            style={{
+                                fontSize:
+                                    '0.75rem',
+                                fontWeight: 800,
+                                color:
+                                    'var(--primary)',
+                                textTransform:
+                                    'uppercase',
+                                letterSpacing:
+                                    '0.08em'
+                            }}
+                        >
+                            Legal Metrology
+                        </span>
+
+                    </div>
+
                     <h1 className="page-title">
-                        {
-                            isHindi
-                                ? 'डैशबोर्ड अवलोकन'
-                                : 'Dashboard Overview'
-                        }
+                        {isHindi
+                            ? 'निरीक्षण कमांड सेंटर'
+                            : 'Inspection Command Center'}
                     </h1>
 
                     <p className="page-subtitle">
-                        {
-                            isHindi
-                                ? 'लीगल मेट्रोलॉजी अनुपालन की वास्तविक समय निगरानी।'
-                                : 'Real-time monitoring of Legal Metrology compliance.'
-                        }
+                        {isHindi
+                            ? 'कानूनी मेट्रोलॉजी अनुपालन की वास्तविक समय निगरानी।'
+                            : 'Real-time monitoring of Legal Metrology compliance and field inspections.'}
                     </p>
 
                 </div>
 
                 <div
-                    className="dashboard-insight"
-                    role="status"
-                    aria-live="polite"
+                    className="d-flex align-center gap-3"
+                    style={{
+                        flexWrap: 'wrap'
+                    }}
                 >
 
-                    <div className="dashboard-insight-icon">
-                        <Sparkles size={18} />
-                    </div>
+                    <Button
+                        variant="outline"
+                        onClick={
+                            refreshDashboard
+                        }
+                        disabled={
+                            refreshing
+                        }
+                    >
+                        <RefreshCw
+                            size={16}
+                            style={{
+                                marginRight: 7,
+                                animation:
+                                    refreshing
+                                        ? 'spin 0.8s linear infinite'
+                                        : 'none'
+                            }}
+                        />
 
-                    <div className="dashboard-insight-copy">
+                        {isHindi
+                            ? 'रिफ्रेश'
+                            : 'Refresh'}
+                    </Button>
 
-                        <span className="dashboard-insight-label">
-                            <Activity size={13} />
-                            Compliance signal
-                        </span>
+                    <Button
+                        onClick={() =>
+                            navigate(
+                                '/scan'
+                            )
+                        }
+                    >
+                        <FileScan
+                            size={17}
+                            style={{
+                                marginRight: 7
+                            }}
+                        />
 
-                        <p key={insightIndex}>
-                            {
-                                insights[
-                                    insightIndex
-                                ]
-                                    .replace(
-                                        'Copilot Insight: ',
-                                        ''
-                                    )
-                                    .replace(
-                                        /^को-पायलट इनसाइट: /,
-                                        ''
-                                    )
-                            }
-                        </p>
-
-                    </div>
+                        {isHindi
+                            ? 'नया निरीक्षण'
+                            : 'New Inspection'}
+                    </Button>
 
                 </div>
 
             </div>
 
-            {/* ==================================================
-                QUICK METRICS
-            ================================================== */}
+            {/* =================================================
+                LIVE STATUS BAR
+            ================================================= */}
+
+            <div
+                className="d-flex align-center gap-3 mb-5"
+                style={{
+                    padding:
+                        '10px 14px',
+                    borderRadius: 12,
+                    border:
+                        '1px solid var(--border)',
+                    background:
+                        'var(--bg-card)',
+                    fontSize:
+                        '0.8rem',
+                    color:
+                        'var(--text-secondary)'
+                }}
+            >
+
+                <span
+                    className="d-flex align-center gap-2"
+                >
+
+                    <span
+                        style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius:
+                                '50%',
+                            background:
+                                'var(--success)',
+                            boxShadow:
+                                '0 0 0 4px var(--success-light)'
+                        }}
+                    />
+
+                    <strong
+                        style={{
+                            color:
+                                'var(--success)'
+                        }}
+                    >
+                        {isHindi
+                            ? 'सिस्टम लाइव'
+                            : 'System Live'}
+                    </strong>
+
+                </span>
+
+                <span>
+                    •
+                </span>
+
+                <span>
+                    {isHindi
+                        ? 'डेटा अंतिम बार अभी अपडेट हुआ'
+                        : 'Live inspection data connected'}
+                </span>
+
+                <span
+                    style={{
+                        marginLeft:
+                            'auto'
+                    }}
+                >
+                    {new Date().toLocaleDateString(
+                        isHindi
+                            ? 'hi-IN'
+                            : 'en-IN',
+                        {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                        }
+                    )}
+                </span>
+
+            </div>
+
+            {/* =================================================
+                KPI CARDS
+            ================================================= */}
 
             <div
                 className="d-flex gap-4 mb-6"
                 style={{
-                    flexWrap:
-                        'wrap'
+                    flexWrap: 'wrap'
                 }}
             >
 
+                {/* TOTAL */}
+
                 <Card
                     style={{
                         flex:
-                            '1 1 200px',
-
+                            '1 1 210px',
+                        position:
+                            'relative',
+                        overflow:
+                            'hidden',
                         transform:
                             animatedNumbers
                                 ? 'translateY(0)'
                                 : 'translateY(10px)',
-
                         opacity:
                             animatedNumbers
                                 ? 1
                                 : 0,
-
                         transition:
-                            'all 0.5s ease-out 0s'
+                            'all 0.5s ease-out'
                     }}
                 >
 
-                    <div className="d-flex justify-between align-center mb-2">
+                    <div
+                        style={{
+                            position:
+                                'absolute',
+                            right: -20,
+                            top: -20,
+                            width: 90,
+                            height: 90,
+                            borderRadius:
+                                '50%',
+                            background:
+                                'var(--primary-light)',
+                            opacity: 0.5
+                        }}
+                    />
 
-                        <h3
-                            className="text-muted"
+                    <div className="d-flex justify-between align-center">
+
+                        <div>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.78rem',
+                                    color:
+                                        'var(--text-secondary)',
+                                    fontWeight: 700,
+                                    textTransform:
+                                        'uppercase',
+                                    letterSpacing:
+                                        '0.04em'
+                                }}
+                            >
+                                {isHindi
+                                    ? 'कुल निरीक्षण'
+                                    : 'Total Inspections'}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '2.25rem',
+                                    fontWeight: 850,
+                                    marginTop: 8,
+                                    lineHeight: 1
+                                }}
+                            >
+                                {computed.total}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.75rem',
+                                    color:
+                                        'var(--text-secondary)',
+                                    marginTop: 8
+                                }}
+                            >
+                                {computed.todayScans}{' '}
+                                {isHindi
+                                    ? 'आज'
+                                    : 'today'}
+                            </p>
+
+                        </div>
+
+                        <div
                             style={{
-                                fontSize:
-                                    '0.9rem',
-
-                                fontWeight:
-                                    600
+                                width: 46,
+                                height: 46,
+                                borderRadius: 14,
+                                background:
+                                    'var(--primary-light)',
+                                color:
+                                    'var(--primary)',
+                                display: 'flex',
+                                alignItems:
+                                    'center',
+                                justifyContent:
+                                    'center'
                             }}
                         >
-                            {
-                                isHindi
-                                    ? 'कुल स्कैन'
-                                    : 'Total Scans'
-                            }
-                        </h3>
-
-                        <FileScan className="text-brand" />
+                            <ClipboardCheck
+                                size={22}
+                            />
+                        </div>
 
                     </div>
 
-                    <p
-                        style={{
-                            fontSize:
-                                '2rem',
-
-                            fontWeight:
-                                800
-                        }}
-                    >
-                        {computed.total}
-                    </p>
-
-                    <p
-                        className="text-success"
-                        style={{
-                            fontSize:
-                                '0.8rem',
-
-                            fontWeight:
-                                600
-                        }}
-                    >
-                        +12% from last week
-                    </p>
-
                 </Card>
+
+                {/* COMPLIANCE */}
 
                 <Card
                     style={{
                         flex:
-                            '1 1 200px',
-
+                            '1 1 210px',
                         transform:
                             animatedNumbers
                                 ? 'translateY(0)'
                                 : 'translateY(10px)',
-
                         opacity:
                             animatedNumbers
                                 ? 1
                                 : 0,
-
                         transition:
                             'all 0.5s ease-out 0.1s'
                     }}
                 >
 
-                    <div className="d-flex justify-between align-center mb-2">
+                    <div className="d-flex justify-between align-center">
 
-                        <h3
-                            className="text-muted"
+                        <div>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.78rem',
+                                    color:
+                                        'var(--text-secondary)',
+                                    fontWeight: 700,
+                                    textTransform:
+                                        'uppercase',
+                                    letterSpacing:
+                                        '0.04em'
+                                }}
+                            >
+                                {isHindi
+                                    ? 'अनुपालन दर'
+                                    : 'Compliance Rate'}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '2.25rem',
+                                    fontWeight: 850,
+                                    color:
+                                        'var(--success)',
+                                    marginTop: 8,
+                                    lineHeight: 1
+                                }}
+                            >
+                                {computed.complianceRate}%
+                            </p>
+
+                        </div>
+
+                        <div
                             style={{
-                                fontSize:
-                                    '0.9rem',
-
-                                fontWeight:
-                                    600
+                                width: 46,
+                                height: 46,
+                                borderRadius: 14,
+                                background:
+                                    'var(--success-light)',
+                                color:
+                                    'var(--success)',
+                                display: 'flex',
+                                alignItems:
+                                    'center',
+                                justifyContent:
+                                    'center'
                             }}
                         >
-                            {
-                                isHindi
-                                    ? 'अनुपालन दर'
-                                    : 'Compliance Rate'
-                            }
-                        </h3>
-
-                        <ShieldCheck className="text-success" />
+                            <ShieldCheck
+                                size={23}
+                            />
+                        </div>
 
                     </div>
 
-                    <p
-                        style={{
-                            fontSize:
-                                '2rem',
-
-                            fontWeight:
-                                800,
-
-                            color:
-                                'var(--success)'
-                        }}
-                    >
-                        {computed.rate}%
-                    </p>
-
                     <div
                         style={{
-                            width:
-                                '100%',
-
-                            height:
-                                6,
-
+                            marginTop: 18,
+                            height: 7,
+                            borderRadius: 10,
                             background:
                                 'var(--bg-app)',
-
-                            borderRadius:
-                                3,
-
-                            marginTop:
-                                8,
-
                             overflow:
                                 'hidden'
                         }}
@@ -893,19 +1079,13 @@ export const Dashboard = () => {
                         <div
                             style={{
                                 width:
-                                    `${computed.rate}%`,
-
-                                height:
-                                    '100%',
-
+                                    `${computed.complianceRate}%`,
+                                height: '100%',
                                 background:
                                     'var(--success)',
-
-                                borderRadius:
-                                    3,
-
+                                borderRadius: 10,
                                 transition:
-                                    'width 1s ease-out'
+                                    'width 1s ease'
                             }}
                         />
 
@@ -913,163 +1093,320 @@ export const Dashboard = () => {
 
                 </Card>
 
+                {/* VIOLATIONS */}
+
                 <Card
                     style={{
                         flex:
-                            '1 1 200px',
-
+                            '1 1 210px',
                         borderLeft:
                             '4px solid var(--danger)',
-
                         transform:
                             animatedNumbers
                                 ? 'translateY(0)'
                                 : 'translateY(10px)',
-
                         opacity:
                             animatedNumbers
                                 ? 1
                                 : 0,
-
                         transition:
                             'all 0.5s ease-out 0.2s'
                     }}
                 >
 
-                    <div className="d-flex justify-between align-center mb-2">
+                    <div className="d-flex justify-between align-center">
 
-                        <h3
-                            className="text-muted"
+                        <div>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.78rem',
+                                    color:
+                                        'var(--text-secondary)',
+                                    fontWeight: 700,
+                                    textTransform:
+                                        'uppercase',
+                                    letterSpacing:
+                                        '0.04em'
+                                }}
+                            >
+                                {isHindi
+                                    ? 'उल्लंघन'
+                                    : 'Violations'}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '2.25rem',
+                                    fontWeight: 850,
+                                    color:
+                                        'var(--danger)',
+                                    marginTop: 8,
+                                    lineHeight: 1
+                                }}
+                            >
+                                {computed.violations}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.75rem',
+                                    color:
+                                        'var(--danger)',
+                                    marginTop: 8,
+                                    fontWeight: 600
+                                }}
+                            >
+                                {computed.todayViolations}{' '}
+                                {isHindi
+                                    ? 'आज'
+                                    : 'detected today'}
+                            </p>
+
+                        </div>
+
+                        <div
                             style={{
-                                fontSize:
-                                    '0.9rem',
-
-                                fontWeight:
-                                    600
+                                width: 46,
+                                height: 46,
+                                borderRadius: 14,
+                                background:
+                                    'var(--danger-light)',
+                                color:
+                                    'var(--danger)',
+                                display: 'flex',
+                                alignItems:
+                                    'center',
+                                justifyContent:
+                                    'center'
                             }}
                         >
-                            {
-                                isHindi
-                                    ? 'उल्लंघन'
-                                    : 'Violations Detected'
-                            }
-                        </h3>
-
-                        <AlertTriangle className="text-danger" />
+                            <AlertTriangle
+                                size={23}
+                            />
+                        </div>
 
                     </div>
 
-                    <p
-                        style={{
-                            fontSize:
-                                '2rem',
+                </Card>
 
-                            fontWeight:
-                                800
-                        }}
-                    >
-                        {computed.viols}
-                    </p>
+                {/* REVIEW */}
 
-                    <p
-                        className="text-danger"
-                        style={{
-                            fontSize:
-                                '0.8rem',
+                <Card
+                    style={{
+                        flex:
+                            '1 1 210px',
+                        transform:
+                            animatedNumbers
+                                ? 'translateY(0)'
+                                : 'translateY(10px)',
+                        opacity:
+                            animatedNumbers
+                                ? 1
+                                : 0,
+                        transition:
+                            'all 0.5s ease-out 0.3s'
+                    }}
+                >
 
-                            fontWeight:
-                                600
-                        }}
-                    >
-                        Requires review
-                    </p>
+                    <div className="d-flex justify-between align-center">
+
+                        <div>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.78rem',
+                                    color:
+                                        'var(--text-secondary)',
+                                    fontWeight: 700,
+                                    textTransform:
+                                        'uppercase',
+                                    letterSpacing:
+                                        '0.04em'
+                                }}
+                            >
+                                {isHindi
+                                    ? 'समीक्षा कतार'
+                                    : 'Review Queue'}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '2.25rem',
+                                    fontWeight: 850,
+                                    color:
+                                        computed.reviewQueue >
+                                            0
+                                            ? 'var(--warning)'
+                                            : 'var(--success)',
+                                    marginTop: 8,
+                                    lineHeight: 1
+                                }}
+                            >
+                                {computed.reviewQueue}
+                            </p>
+
+                            <p
+                                style={{
+                                    fontSize:
+                                        '0.75rem',
+                                    color:
+                                        'var(--text-secondary)',
+                                    marginTop: 8
+                                }}
+                            >
+                                {isHindi
+                                    ? 'ध्यान आवश्यक'
+                                    : 'Items requiring attention'}
+                            </p>
+
+                        </div>
+
+                        <div
+                            style={{
+                                width: 46,
+                                height: 46,
+                                borderRadius: 14,
+                                background:
+                                    'var(--warning-light)',
+                                color:
+                                    'var(--warning)',
+                                display: 'flex',
+                                alignItems:
+                                    'center',
+                                justifyContent:
+                                    'center'
+                            }}
+                        >
+                            <Clock
+                                size={22}
+                            />
+                        </div>
+
+                    </div>
 
                 </Card>
 
             </div>
 
-            {/* ==================================================
-                MAIN GRID
-            ================================================== */}
+            {/* =================================================
+                MAIN CONTENT
+            ================================================= */}
 
             <div
                 className="d-flex gap-4 mb-6"
                 style={{
-                    flexWrap:
-                        'wrap'
+                    flexWrap: 'wrap'
                 }}
             >
+
+                {/* =================================================
+                    LEFT
+                ================================================= */}
 
                 <div
                     style={{
                         flex:
-                            '2 1 500px',
-
+                            '2 1 600px',
                         display:
                             'flex',
-
                         flexDirection:
                             'column',
-
-                        gap:
-                            '24px'
+                        gap: 24
                     }}
                 >
 
-                    {/* ==================================================
-                        ACTIVITY CHART
-                    ================================================== */}
+                    {/* ACTIVITY */}
 
                     <Card
                         style={{
-                            height:
-                                420
+                            height: 390
                         }}
                     >
 
                         <div className="d-flex justify-between align-center mb-4">
 
-                            <h3 className="text-muted">
-                                {
-                                    isHindi
-                                        ? 'प्रवृत्ति पूर्वानुमान के साथ गतिविधि'
-                                        : 'Activity & Trend Forecast'
-                                }
-                            </h3>
+                            <div>
 
-                            <div className="d-flex gap-2">
+                                <div
+                                    className="d-flex align-center gap-2"
+                                >
+
+                                    <Activity
+                                        size={19}
+                                        className="text-brand"
+                                    />
+
+                                    <h3>
+                                        {isHindi
+                                            ? 'निरीक्षण गतिविधि'
+                                            : 'Inspection Activity'}
+                                    </h3>
+
+                                </div>
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.78rem',
+                                        color:
+                                            'var(--text-secondary)',
+                                        marginTop: 4
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'साप्ताहिक निरीक्षण और उल्लंघन'
+                                        : 'Weekly inspections and detected violations'}
+                                </p>
+
+                            </div>
+
+                            <span
+                                style={{
+                                    display:
+                                        'flex',
+                                    alignItems:
+                                        'center',
+                                    gap: 6,
+                                    padding:
+                                        '6px 10px',
+                                    borderRadius:
+                                        20,
+                                    background:
+                                        'var(--success-light)',
+                                    color:
+                                        'var(--success)',
+                                    fontSize:
+                                        '0.72rem',
+                                    fontWeight: 700
+                                }}
+                            >
 
                                 <span
                                     style={{
-                                        fontSize:
-                                            '0.75rem',
-
-                                        padding:
-                                            '4px 8px',
-
-                                        background:
-                                            'var(--primary-light)',
-
-                                        color:
-                                            'var(--primary)',
-
+                                        width: 6,
+                                        height: 6,
                                         borderRadius:
-                                            12,
-
-                                        fontWeight:
-                                            700
+                                            '50%',
+                                        background:
+                                            'currentColor'
                                     }}
-                                >
-                                    AI Forecast Online
-                                </span>
+                                />
 
-                            </div>
+                                Live Data
+
+                            </span>
 
                         </div>
 
                         <ResponsiveContainer
                             width="100%"
-                            height="85%"
+                            height="80%"
                         >
 
                             <AreaChart
@@ -1081,7 +1418,7 @@ export const Dashboard = () => {
                                 <defs>
 
                                     <linearGradient
-                                        id="colorScans"
+                                        id="dashboardScans"
                                         x1="0"
                                         y1="0"
                                         x2="0"
@@ -1091,7 +1428,7 @@ export const Dashboard = () => {
                                         <stop
                                             offset="5%"
                                             stopColor="var(--primary)"
-                                            stopOpacity={0.4}
+                                            stopOpacity={0.35}
                                         />
 
                                         <stop
@@ -1103,7 +1440,7 @@ export const Dashboard = () => {
                                     </linearGradient>
 
                                     <linearGradient
-                                        id="colorViolations"
+                                        id="dashboardViolations"
                                         x1="0"
                                         y1="0"
                                         x2="0"
@@ -1113,7 +1450,7 @@ export const Dashboard = () => {
                                         <stop
                                             offset="5%"
                                             stopColor="var(--danger)"
-                                            stopOpacity={0.3}
+                                            stopOpacity={0.25}
                                         />
 
                                         <stop
@@ -1134,46 +1471,34 @@ export const Dashboard = () => {
 
                                 <XAxis
                                     dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
                                     tick={{
-                                        fontSize:
-                                            12,
-
+                                        fontSize: 12,
                                         fill:
                                             'var(--text-secondary)'
                                     }}
-                                    axisLine={false}
-                                    tickLine={false}
                                 />
 
                                 <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
                                     tick={{
-                                        fontSize:
-                                            12,
-
+                                        fontSize: 12,
                                         fill:
                                             'var(--text-secondary)'
                                     }}
-                                    axisLine={false}
-                                    tickLine={false}
                                 />
 
                                 <Tooltip
                                     contentStyle={{
-                                        borderRadius:
-                                            12,
-
+                                        borderRadius: 12,
                                         border:
                                             '1px solid var(--border)',
-
-                                        boxShadow:
-                                            'var(--shadow-md)',
-
                                         background:
                                             'var(--bg-card)',
-
-                                        backdropFilter:
-                                            'blur(10px)',
-
+                                        boxShadow:
+                                            'var(--shadow-md)',
                                         color:
                                             'var(--text-primary)'
                                     }}
@@ -1184,8 +1509,7 @@ export const Dashboard = () => {
                                     dataKey="scans"
                                     stroke="var(--primary)"
                                     strokeWidth={3}
-                                    fillOpacity={1}
-                                    fill="url(#colorScans)"
+                                    fill="url(#dashboardScans)"
                                 />
 
                                 <Area
@@ -1193,8 +1517,7 @@ export const Dashboard = () => {
                                     dataKey="violations"
                                     stroke="var(--danger)"
                                     strokeWidth={2}
-                                    fillOpacity={1}
-                                    fill="url(#colorViolations)"
+                                    fill="url(#dashboardViolations)"
                                 />
 
                             </AreaChart>
@@ -1203,14 +1526,274 @@ export const Dashboard = () => {
 
                     </Card>
 
-                    {/* ==================================================
-                        REAL GPS HEATMAP
-                    ================================================== */}
+                    {/* =================================================
+                        RECENT INSPECTIONS
+                    ================================================= */}
+
+                    <Card>
+
+                        <div
+                            className="d-flex justify-between align-center"
+                            style={{
+                                marginBottom: 18
+                            }}
+                        >
+
+                            <div>
+
+                                <h3>
+                                    {isHindi
+                                        ? 'हाल के निरीक्षण'
+                                        : 'Recent Inspections'}
+                                </h3>
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.78rem',
+                                        color:
+                                            'var(--text-secondary)',
+                                        marginTop: 4
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'आपकी नवीनतम स्कैन गतिविधि'
+                                        : 'Latest inspection activity from the field'}
+                                </p>
+
+                            </div>
+
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                    navigate(
+                                        '/history'
+                                    )
+                                }
+                            >
+                                View All
+                                <ArrowRight
+                                    size={14}
+                                    style={{
+                                        marginLeft: 6
+                                    }}
+                                />
+                            </Button>
+
+                        </div>
+
+                        {computed.recent.length === 0 ? (
+
+                            <div
+                                style={{
+                                    padding:
+                                        '35px 20px',
+                                    textAlign:
+                                        'center',
+                                    border:
+                                        '1px dashed var(--border)',
+                                    borderRadius:
+                                        14,
+                                    color:
+                                        'var(--text-secondary)'
+                                }}
+                            >
+
+                                <Search
+                                    size={28}
+                                    style={{
+                                        marginBottom:
+                                            10,
+                                        opacity: 0.5
+                                    }}
+                                />
+
+                                <p
+                                    style={{
+                                        fontWeight:
+                                            600
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'अभी कोई निरीक्षण उपलब्ध नहीं है'
+                                        : 'No inspections recorded yet'}
+                                </p>
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.78rem',
+                                        marginTop: 4
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'नया निरीक्षण शुरू करके यहां परिणाम देखें।'
+                                        : 'Start a new inspection to see results here.'}
+                                </p>
+
+                            </div>
+
+                        ) : (
+
+                            <div
+                                style={{
+                                    display:
+                                        'flex',
+                                    flexDirection:
+                                        'column',
+                                    gap: 8
+                                }}
+                            >
+
+                                {computed.recent.map(
+                                    item => {
+
+                                        const compliant =
+                                            item.status ===
+                                            'Compliant';
+
+                                        return (
+
+                                            <div
+                                                key={
+                                                    item.id
+                                                }
+                                                style={{
+                                                    display:
+                                                        'flex',
+                                                    alignItems:
+                                                        'center',
+                                                    gap: 12,
+                                                    padding:
+                                                        '12px 14px',
+                                                    border:
+                                                        '1px solid var(--border)',
+                                                    borderRadius:
+                                                        12,
+                                                    background:
+                                                        'var(--bg-app)'
+                                                }}
+                                            >
+
+                                                <div
+                                                    style={{
+                                                        width: 36,
+                                                        height: 36,
+                                                        flexShrink: 0,
+                                                        borderRadius: 10,
+                                                        background:
+                                                            compliant
+                                                                ? 'var(--success-light)'
+                                                                : 'var(--danger-light)',
+                                                        color:
+                                                            compliant
+                                                                ? 'var(--success)'
+                                                                : 'var(--danger)',
+                                                        display:
+                                                            'flex',
+                                                        alignItems:
+                                                            'center',
+                                                        justifyContent:
+                                                            'center'
+                                                    }}
+                                                >
+
+                                                    {compliant ? (
+                                                        <CheckCircle2
+                                                            size={18}
+                                                        />
+                                                    ) : (
+                                                        <XCircle
+                                                            size={18}
+                                                        />
+                                                    )}
+
+                                                </div>
+
+                                                <div
+                                                    style={{
+                                                        flex: 1,
+                                                        minWidth:
+                                                            0
+                                                    }}
+                                                >
+
+                                                    <p
+                                                        style={{
+                                                            fontWeight:
+                                                                700,
+                                                            fontSize:
+                                                                '0.88rem'
+                                                        }}
+                                                    >
+                                                        {getProductName(
+                                                            item.product
+                                                        )}
+                                                    </p>
+
+                                                    <p
+                                                        style={{
+                                                            fontSize:
+                                                                '0.72rem',
+                                                            color:
+                                                                'var(--text-secondary)',
+                                                            marginTop:
+                                                                3
+                                                        }}
+                                                    >
+                                                        #{item.id} •{' '}
+                                                        {formatDate(
+                                                            item.date
+                                                        )}
+                                                    </p>
+
+                                                </div>
+
+                                                <span
+                                                    style={{
+                                                        padding:
+                                                            '5px 9px',
+                                                        borderRadius:
+                                                            8,
+                                                        fontSize:
+                                                            '0.7rem',
+                                                        fontWeight:
+                                                            800,
+                                                        background:
+                                                            compliant
+                                                                ? 'var(--success-light)'
+                                                                : 'var(--danger-light)',
+                                                        color:
+                                                            compliant
+                                                                ? 'var(--success)'
+                                                                : 'var(--danger)'
+                                                    }}
+                                                >
+                                                    {compliant
+                                                        ? 'COMPLIANT'
+                                                        : 'VIOLATION'}
+                                                </span>
+
+                                            </div>
+
+                                        );
+                                    }
+                                )}
+
+                            </div>
+
+                        )}
+
+                    </Card>
+
+                    {/* =================================================
+                        MAP
+                    ================================================= */}
 
                     <Card
                         style={{
-                            minHeight:
-                                480
+                            minHeight: 520
                         }}
                     >
 
@@ -1218,40 +1801,35 @@ export const Dashboard = () => {
 
                             <div>
 
-                                <div className="d-flex align-center gap-2">
+                                <div
+                                    className="d-flex align-center gap-2"
+                                >
 
                                     <MapIcon
-                                        className="text-secondary"
                                         size={20}
+                                        className="text-secondary"
                                     />
 
-                                    <h3 className="text-muted">
-                                        {
-                                            isHindi
-                                                ? 'निरीक्षण हॉटस्पॉट मैप'
-                                                : 'Inspection Hotspot Map'
-                                        }
+                                    <h3>
+                                        {isHindi
+                                            ? 'निरीक्षण हॉटस्पॉट'
+                                            : 'Inspection Hotspots'}
                                     </h3>
 
                                 </div>
 
                                 <p
                                     style={{
-                                        marginTop:
-                                            4,
-
+                                        marginTop: 5,
                                         fontSize:
-                                            '0.8rem',
-
+                                            '0.78rem',
                                         color:
                                             'var(--text-secondary)'
                                     }}
                                 >
-                                    {
-                                        analyticsLoading
-                                            ? 'Loading live GPS inspection data...'
-                                            : `${analytics.inspections.length} located inspections • ${violationLocations.length} violations`
-                                    }
+                                    {analyticsLoading
+                                        ? 'Loading live GPS inspection data...'
+                                        : `${analytics.inspections.length} located inspections • ${violationLocations.length} violation locations`}
                                 </p>
 
                             </div>
@@ -1260,49 +1838,37 @@ export const Dashboard = () => {
                                 className="d-flex gap-3"
                                 style={{
                                     fontSize:
-                                        '0.75rem'
+                                        '0.72rem'
                                 }}
                             >
 
-                                <span className="d-flex align-center gap-1">
+                                <span
+                                    className="d-flex align-center gap-1"
+                                >
                                     <span
                                         style={{
-                                            width:
-                                                10,
-
-                                            height:
-                                                10,
-
+                                            width: 9,
+                                            height: 9,
                                             borderRadius:
                                                 '50%',
-
                                             background:
-                                                'var(--success)',
-
-                                            display:
-                                                'inline-block'
+                                                'var(--success)'
                                         }}
                                     />
                                     Compliant
                                 </span>
 
-                                <span className="d-flex align-center gap-1">
+                                <span
+                                    className="d-flex align-center gap-1"
+                                >
                                     <span
                                         style={{
-                                            width:
-                                                10,
-
-                                            height:
-                                                10,
-
+                                            width: 9,
+                                            height: 9,
                                             borderRadius:
                                                 '50%',
-
                                             background:
-                                                'var(--danger)',
-
-                                            display:
-                                                'inline-block'
+                                                'var(--danger)'
                                         }}
                                     />
                                     Violation
@@ -1316,28 +1882,22 @@ export const Dashboard = () => {
 
                             <div
                                 style={{
-                                    height:
-                                        380,
-
+                                    height: 400,
                                     display:
                                         'flex',
-
                                     alignItems:
                                         'center',
-
                                     justifyContent:
                                         'center',
-
-                                    color:
-                                        'var(--danger)',
-
                                     background:
                                         'var(--bg-app)',
-
                                     borderRadius:
-                                        16
+                                        16,
+                                    color:
+                                        'var(--danger)'
                                 }}
                             >
+
                                 <div
                                     style={{
                                         textAlign:
@@ -1346,7 +1906,7 @@ export const Dashboard = () => {
                                 >
 
                                     <AlertTriangle
-                                        size={32}
+                                        size={34}
                                         style={{
                                             marginBottom:
                                                 10
@@ -1358,21 +1918,18 @@ export const Dashboard = () => {
                                     </p>
 
                                 </div>
+
                             </div>
 
                         ) : (
 
                             <div
                                 style={{
-                                    height:
-                                        380,
-
+                                    height: 400,
                                     borderRadius:
                                         16,
-
                                     overflow:
                                         'hidden',
-
                                     border:
                                         '1px solid var(--border)'
                                 }}
@@ -1383,7 +1940,8 @@ export const Dashboard = () => {
                                         mapCenter
                                     }
                                     zoom={
-                                        analytics.inspections.length > 0
+                                        analytics.inspections.length >
+                                            0
                                             ? 12
                                             : 5
                                     }
@@ -1393,25 +1951,20 @@ export const Dashboard = () => {
                                     style={{
                                         height:
                                             '100%',
-
                                         width:
                                             '100%'
                                     }}
                                 >
 
                                     <TileLayer
-                                        attribution='&copy; OpenStreetMap contributors'
+                                        attribution="&copy; OpenStreetMap contributors"
                                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                     />
 
-                                    {/* ======================================
-                                        VIOLATION HOTSPOT CIRCLES
-                                    ====================================== */}
+                                    {/* HOTSPOT AREAS */}
 
                                     {violationLocations.map(
-                                        (
-                                            inspection
-                                        ) => (
+                                        inspection => (
 
                                             <Circle
                                                 key={
@@ -1427,13 +1980,10 @@ export const Dashboard = () => {
                                                 pathOptions={{
                                                     color:
                                                         'var(--danger)',
-
                                                     fillColor:
                                                         'var(--danger)',
-
                                                     fillOpacity:
-                                                        0.15,
-
+                                                        0.14,
                                                     weight:
                                                         1
                                                 }}
@@ -1442,14 +1992,10 @@ export const Dashboard = () => {
                                         )
                                     )}
 
-                                    {/* ======================================
-                                        INSPECTION MARKERS
-                                    ====================================== */}
+                                    {/* MARKERS */}
 
                                     {analytics.inspections.map(
-                                        (
-                                            inspection
-                                        ) => {
+                                        inspection => {
 
                                             const isViolation =
                                                 inspection.status ===
@@ -1475,15 +2021,12 @@ export const Dashboard = () => {
                                                             isViolation
                                                                 ? 'var(--danger)'
                                                                 : 'var(--success)',
-
                                                         fillColor:
                                                             isViolation
                                                                 ? 'var(--danger)'
                                                                 : 'var(--success)',
-
                                                         fillOpacity:
-                                                            0.85,
-
+                                                            0.9,
                                                         weight:
                                                             2
                                                     }}
@@ -1494,7 +2037,7 @@ export const Dashboard = () => {
                                                         <div
                                                             style={{
                                                                 minWidth:
-                                                                    190
+                                                                    210
                                                             }}
                                                         >
 
@@ -1502,15 +2045,11 @@ export const Dashboard = () => {
                                                                 style={{
                                                                     display:
                                                                         'flex',
-
                                                                     alignItems:
                                                                         'center',
-
-                                                                    gap:
-                                                                        6,
-
+                                                                    gap: 7,
                                                                     marginBottom:
-                                                                        8
+                                                                        10
                                                                 }}
                                                             >
 
@@ -1533,7 +2072,7 @@ export const Dashboard = () => {
                                                                 }}
                                                             >
                                                                 <strong>
-                                                                    Scan:
+                                                                    ID:
                                                                 </strong>{' '}
                                                                 {
                                                                     inspection.id
@@ -1556,7 +2095,6 @@ export const Dashboard = () => {
                                                                             isViolation
                                                                                 ? 'var(--danger)'
                                                                                 : 'var(--success)',
-
                                                                         fontWeight:
                                                                             700
                                                                     }}
@@ -1565,6 +2103,7 @@ export const Dashboard = () => {
                                                                         inspection.status
                                                                     }
                                                                 </span>
+
                                                             </p>
 
                                                             <p
@@ -1576,7 +2115,6 @@ export const Dashboard = () => {
                                                                 <strong>
                                                                     GPS:
                                                                 </strong>{' '}
-
                                                                 {inspection.latitude.toFixed(
                                                                     5
                                                                 )}
@@ -1587,7 +2125,6 @@ export const Dashboard = () => {
                                                             </p>
 
                                                             {inspection.filename && (
-
                                                                 <p
                                                                     style={{
                                                                         marginBottom:
@@ -1601,39 +2138,34 @@ export const Dashboard = () => {
                                                                         inspection.filename
                                                                     }
                                                                 </p>
-
                                                             )}
 
                                                             {isViolation &&
-                                                                inspection.violations.length >
+                                                                inspection.violations?.length >
                                                                     0 && (
 
                                                                     <div
                                                                         style={{
                                                                             marginTop:
-                                                                                8
+                                                                                9
                                                                         }}
                                                                     >
 
                                                                         <strong>
-                                                                            Missing:
+                                                                            Detected issues:
                                                                         </strong>
 
                                                                         <ul
                                                                             style={{
                                                                                 margin:
-                                                                                    '4px 0 0 18px',
-
+                                                                                    '5px 0 0 18px',
                                                                                 padding:
                                                                                     0
                                                                             }}
                                                                         >
 
                                                                             {inspection.violations.map(
-                                                                                (
-                                                                                    violation
-                                                                                ) => (
-
+                                                                                violation => (
                                                                                     <li
                                                                                         key={
                                                                                             violation
@@ -1643,7 +2175,6 @@ export const Dashboard = () => {
                                                                                             violation
                                                                                         }
                                                                                     </li>
-
                                                                                 )
                                                                             )}
 
@@ -1670,29 +2201,27 @@ export const Dashboard = () => {
                         )}
 
                         <div
-                            className="d-flex gap-3 mt-3"
+                            className="d-flex gap-4 mt-3"
                             style={{
+                                flexWrap:
+                                    'wrap',
                                 fontSize:
-                                    '0.78rem',
-
+                                    '0.75rem',
                                 color:
                                     'var(--text-secondary)'
                             }}
                         >
 
                             <span>
-                                🔴 Red =
-                                violation hotspot
+                                🔴 Violation hotspot
                             </span>
 
                             <span>
-                                🟢 Green =
-                                compliant inspection
+                                🟢 Compliant inspection
                             </span>
 
                             <span>
-                                📍 Click marker =
-                                inspection details
+                                📍 Click marker for details
                             </span>
 
                         </div>
@@ -1701,462 +2230,321 @@ export const Dashboard = () => {
 
                 </div>
 
-                {/* ==================================================
+                {/* =================================================
                     RIGHT COLUMN
-                ================================================== */}
+                ================================================= */}
 
                 <div
                     style={{
                         flex:
                             '1 1 320px',
-
                         display:
                             'flex',
-
                         flexDirection:
                             'column',
-
-                        gap:
-                            '24px'
+                        gap: 24
                     }}
                 >
 
-                    {/* ==================================================
-                        REPEAT OFFENDER RADAR
-                    ================================================== */}
+                    {/* =================================================
+                        COMPLIANCE HEALTH
+                    ================================================= */}
 
                     <Card>
 
-                        <div className="d-flex justify-between align-center mb-4">
+                        <div className="d-flex justify-between align-center">
 
-                            <h3 className="text-muted">
-                                {
-                                    isHindi
-                                        ? 'रिपीट ऑफेंडर रडार'
-                                        : 'Repeat Offender Radar'
-                                }
-                            </h3>
+                            <div>
 
-                            <Target
-                                className="text-danger"
-                                size={18}
-                            />
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.75rem',
+                                        fontWeight:
+                                            800,
+                                        color:
+                                            'var(--text-secondary)',
+                                        textTransform:
+                                            'uppercase'
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'अनुपालन स्वास्थ्य'
+                                        : 'Compliance Health'}
+                                </p>
+
+                                <h2
+                                    style={{
+                                        fontSize:
+                                            '2.7rem',
+                                        fontWeight:
+                                            850,
+                                        marginTop:
+                                            8,
+                                        color:
+                                            computed.complianceRate >=
+                                                80
+                                                ? 'var(--success)'
+                                                : computed.complianceRate >=
+                                                    60
+                                                    ? 'var(--warning)'
+                                                    : 'var(--danger)'
+                                    }}
+                                >
+                                    {
+                                        computed.complianceRate
+                                    }%
+                                </h2>
+
+                            </div>
+
+                            <div
+                                style={{
+                                    width: 70,
+                                    height: 70,
+                                    borderRadius:
+                                        '50%',
+                                    background:
+                                        'var(--bg-app)',
+                                    border:
+                                        `7px solid ${
+                                            computed.complianceRate >=
+                                            80
+                                                ? 'var(--success)'
+                                                : computed.complianceRate >=
+                                                    60
+                                                    ? 'var(--warning)'
+                                                    : 'var(--danger)'
+                                        }`,
+                                    display:
+                                        'flex',
+                                    alignItems:
+                                        'center',
+                                    justifyContent:
+                                        'center'
+                                }}
+                            >
+
+                                <ShieldCheck
+                                    size={27}
+                                />
+
+                            </div>
 
                         </div>
 
                         <div
                             style={{
-                                display:
-                                    'flex',
-
-                                flexDirection:
-                                    'column',
-
-                                gap:
-                                    12
+                                marginTop:
+                                    18,
+                                padding:
+                                    '10px 12px',
+                                borderRadius:
+                                    10,
+                                background:
+                                    computed.complianceRate >=
+                                        80
+                                        ? 'var(--success-light)'
+                                        : 'var(--danger-light)',
+                                color:
+                                    computed.complianceRate >=
+                                        80
+                                        ? 'var(--success)'
+                                        : 'var(--danger)',
+                                fontSize:
+                                    '0.78rem',
+                                fontWeight:
+                                    700
                             }}
                         >
 
-                            {computed.offenders.map(
-                                (
-                                    o,
-                                    i
-                                ) => (
-
-                                    <div
-                                        key={i}
-                                        style={{
-                                            display:
-                                                'flex',
-
-                                            justifyContent:
-                                                'space-between',
-
-                                            alignItems:
-                                                'center',
-
-                                            padding:
-                                                '12px',
-
-                                            background:
-                                                'var(--bg-app)',
-
-                                            borderRadius:
-                                                12,
-
-                                            border:
-                                                '1px solid var(--border)'
-                                        }}
-                                    >
-
-                                        <div>
-
-                                            <p
-                                                style={{
-                                                    fontWeight:
-                                                        700,
-
-                                                    fontSize:
-                                                        '0.9rem'
-                                                }}
-                                            >
-                                                {
-                                                    o.name
-                                                }
-                                            </p>
-
-                                            <p
-                                                style={{
-                                                    fontSize:
-                                                        '0.8rem',
-
-                                                    color:
-                                                        'var(--danger)'
-                                                }}
-                                            >
-                                                {
-                                                    o.violations
-                                                }{' '}
-                                                Violations
-                                            </p>
-
-                                        </div>
-
-                                        <div
-                                            style={{
-                                                background:
-                                                    'var(--danger-light)',
-
-                                                color:
-                                                    'var(--danger)',
-
-                                                padding:
-                                                    '4px 8px',
-
-                                                borderRadius:
-                                                    8,
-
-                                                fontSize:
-                                                    '0.8rem',
-
-                                                fontWeight:
-                                                    600
-                                            }}
-                                        >
-                                            {
-                                                o.trend
-                                            }
-                                        </div>
-
-                                    </div>
-
-                                )
-                            )}
+                            {computed.complianceRate >=
+                            80
+                                ? '✓ Overall compliance is healthy'
+                                : '⚠ Compliance requires attention'}
 
                         </div>
 
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            style={{
-                                width:
-                                    '100%',
-
-                                marginTop:
-                                    16
-                            }}
-                            onClick={() =>
-                                navigate(
-                                    '/repository'
-                                )
-                            }
-                        >
-                            View Full List
-                        </Button>
-
                     </Card>
 
-                    {/* ==================================================
-                        LEADERBOARD
-                    ================================================== */}
+                    {/* =================================================
+                        COPILOT SIGNAL
+                    ================================================= */}
 
                     <Card
                         style={{
-                            marginTop:
-                                '0'
+                            background:
+                                'linear-gradient(135deg, var(--bg-card), var(--primary-light))',
+                            border:
+                                '1px solid var(--border)'
                         }}
                     >
 
-                        <div className="d-flex justify-between align-center mb-4">
-
-                            <h3 className="text-muted">
-                                {
-                                    isHindi
-                                        ? 'शीर्ष निरीक्षक (लीडरबोर्ड)'
-                                        : 'Top Inspectors (Leaderboard)'
-                                }
-                            </h3>
-
-                            <Trophy
-                                className="text-warning"
-                                size={18}
-                            />
-
-                        </div>
-
                         <div
-                            style={{
-                                display:
-                                    'flex',
-
-                                flexDirection:
-                                    'column',
-
-                                gap:
-                                    12
-                            }}
+                            className="d-flex align-center gap-2 mb-3"
                         >
 
-                            {[
-                                {
-                                    name:
-                                        'Arjun K.',
-                                    audits:
-                                        142,
-                                    points:
-                                        2840,
-                                    icon:
-                                        <Trophy
-                                            size={16}
-                                            color="gold"
-                                        />
-                                },
+                            <div
+                                style={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius:
+                                        10,
+                                    background:
+                                        'var(--primary)',
+                                    color:
+                                        'white',
+                                    display:
+                                        'flex',
+                                    alignItems:
+                                        'center',
+                                    justifyContent:
+                                        'center'
+                                }}
+                            >
+                                <Sparkles
+                                    size={17}
+                                />
+                            </div>
 
-                                {
-                                    name:
-                                        'Riya S.',
-                                    audits:
-                                        118,
-                                    points:
-                                        2360,
-                                    icon:
-                                        <Medal
-                                            size={16}
-                                            color="silver"
-                                        />
-                                },
+                            <div>
 
-                                {
-                                    name:
-                                        'Mehta B.',
-                                    audits:
-                                        89,
-                                    points:
-                                        1780,
-                                    icon:
-                                        <Award
-                                            size={16}
-                                            color="#cd7f32"
-                                        />
-                                }
+                                <h3>
+                                    {isHindi
+                                        ? 'निरीक्षण सिग्नल'
+                                        : 'Inspection Signal'}
+                                </h3>
 
-                            ].map(
-                                (
-                                    l,
-                                    i
-                                ) => (
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.68rem',
+                                        color:
+                                            'var(--text-secondary)',
+                                        marginTop:
+                                            2
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'वास्तविक डेटा से उत्पन्न'
+                                        : 'Generated from current inspection data'}
+                                </p>
 
-                                    <div
-                                        key={i}
-                                        style={{
-                                            display:
-                                                'flex',
-
-                                            justifyContent:
-                                                'space-between',
-
-                                            alignItems:
-                                                'center',
-
-                                            padding:
-                                                '12px',
-
-                                            background:
-                                                'var(--bg-app)',
-
-                                            borderRadius:
-                                                12,
-
-                                            border:
-                                                '1px solid var(--border)'
-                                        }}
-                                    >
-
-                                        <div className="d-flex align-center gap-3">
-
-                                            <div
-                                                style={{
-                                                    width:
-                                                        32,
-
-                                                    height:
-                                                        32,
-
-                                                    borderRadius:
-                                                        16,
-
-                                                    background:
-                                                        'var(--primary-light)',
-
-                                                    display:
-                                                        'flex',
-
-                                                    alignItems:
-                                                        'center',
-
-                                                    justifyContent:
-                                                        'center'
-                                                }}
-                                            >
-                                                {
-                                                    l.icon
-                                                }
-                                            </div>
-
-                                            <div>
-
-                                                <p
-                                                    style={{
-                                                        fontWeight:
-                                                            700,
-
-                                                        fontSize:
-                                                            '0.9rem'
-                                                    }}
-                                                >
-                                                    {
-                                                        l.name
-                                                    }
-                                                </p>
-
-                                                <p
-                                                    style={{
-                                                        fontSize:
-                                                            '0.75rem',
-
-                                                        color:
-                                                            'var(--text-secondary)'
-                                                    }}
-                                                >
-                                                    {
-                                                        l.audits
-                                                    }{' '}
-                                                    Audits This Month
-                                                </p>
-
-                                            </div>
-
-                                        </div>
-
-                                        <div
-                                            style={{
-                                                background:
-                                                    'var(--success-light)',
-
-                                                color:
-                                                    'var(--success)',
-
-                                                padding:
-                                                    '4px 8px',
-
-                                                borderRadius:
-                                                    8,
-
-                                                fontSize:
-                                                    '0.8rem',
-
-                                                fontWeight:
-                                                    600
-                                            }}
-                                        >
-                                            {
-                                                l.points
-                                            }{' '}
-                                            pts
-                                        </div>
-
-                                    </div>
-
-                                )
-                            )}
+                            </div>
 
                         </div>
 
-                        <Button
-                            variant="outline"
-                            size="sm"
+                        <p
                             style={{
-                                width:
-                                    '100%',
-
-                                marginTop:
-                                    16
+                                fontSize:
+                                    '0.88rem',
+                                lineHeight:
+                                    1.55
                             }}
-                            onClick={() =>
-                                navigate(
-                                    '/rankings'
-                                )
-                            }
                         >
-                            View Overall Rankings
-                        </Button>
+
+                            {computed.violations >
+                            0
+                                ? `There are ${computed.violations} recorded violation${computed.violations === 1 ? '' : 's'} requiring attention.`
+                                : 'No violations have been recorded in the available inspection data.'}
+
+                        </p>
+
+                        {computed.missingMrp >
+                            0 && (
+
+                            <div
+                                style={{
+                                    marginTop:
+                                        12,
+                                    padding:
+                                        '9px 11px',
+                                    background:
+                                        'var(--bg-card)',
+                                    borderRadius:
+                                        9,
+                                    fontSize:
+                                        '0.76rem'
+                                }}
+                            >
+
+                                <strong>
+                                    MRP:
+                                </strong>{' '}
+                                {computed.missingMrp}{' '}
+                                inspection
+                                {computed.missingMrp !==
+                                1
+                                    ? 's'
+                                    : ''}{' '}
+                                missing MRP data.
+
+                            </div>
+
+                        )}
 
                     </Card>
 
-                    {/* ==================================================
+                    {/* =================================================
                         VIOLATION BREAKDOWN
-                    ================================================== */}
+                    ================================================= */}
 
                     <Card
                         style={{
-                            flex:
-                                1,
-
                             minHeight:
-                                320
+                                330
                         }}
                     >
 
-                        <h3 className="mb-4 text-muted">
-                            {
-                                isHindi
-                                    ? 'उल्लंघन के प्रकार'
-                                    : 'Violation Types Breakdown'
-                            }
-                        </h3>
+                        <div className="d-flex justify-between align-center mb-3">
+
+                            <div>
+
+                                <h3>
+                                    {isHindi
+                                        ? 'उल्लंघन प्रकार'
+                                        : 'Violation Categories'}
+                                </h3>
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.72rem',
+                                        color:
+                                            'var(--text-secondary)',
+                                        marginTop:
+                                            3
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'वास्तविक स्कैन डेटा'
+                                        : 'Based on actual scan fields'}
+                                </p>
+
+                            </div>
+
+                            <AlertTriangle
+                                size={18}
+                                className="text-danger"
+                            />
+
+                        </div>
 
                         <ResponsiveContainer
                             width="100%"
-                            height="85%"
+                            height={230}
                         >
 
                             <BarChart
                                 data={
-                                    computed.bar
+                                    computed.violationBreakdown
                                 }
                                 layout="vertical"
                                 margin={{
-                                    top:
-                                        0,
-
-                                    right:
-                                        0,
-
-                                    left:
-                                        20,
-
-                                    bottom:
-                                        0
+                                    top: 0,
+                                    right: 10,
+                                    left: 15,
+                                    bottom: 0
                                 }}
                             >
 
@@ -2170,34 +2558,22 @@ export const Dashboard = () => {
                                     type="category"
                                     axisLine={false}
                                     tickLine={false}
+                                    width={85}
                                     tick={{
-                                        fontSize:
-                                            11,
-
+                                        fontSize: 10,
                                         fill:
                                             'var(--text-secondary)'
                                     }}
-                                    width={80}
                                 />
 
                                 <Tooltip
-                                    cursor={{
-                                        fill:
-                                            'rgba(0,0,0,0.05)'
-                                    }}
                                     contentStyle={{
                                         borderRadius:
-                                            12,
-
+                                            10,
                                         background:
                                             'var(--bg-card)',
-
-                                        backdropFilter:
-                                            'blur(10px)',
-
                                         border:
                                             '1px solid var(--border)',
-
                                         color:
                                             'var(--text-primary)'
                                     }}
@@ -2205,24 +2581,21 @@ export const Dashboard = () => {
 
                                 <Bar
                                     dataKey="val"
+                                    barSize={14}
                                     radius={[
                                         0,
                                         6,
                                         6,
                                         0
                                     ]}
-                                    barSize={16}
                                 >
 
-                                    {computed.bar.map(
-                                        (
-                                            _,
-                                            index
-                                        ) => (
+                                    {computed.violationBreakdown.map(
+                                        (_, index) => (
 
                                             <Cell
                                                 key={
-                                                    `cell-${index}`
+                                                    `violation-cell-${index}`
                                                 }
                                                 fill={
                                                     index ===
@@ -2243,26 +2616,532 @@ export const Dashboard = () => {
 
                     </Card>
 
+                    {/* =================================================
+                        REPEAT OFFENDERS
+                    ================================================= */}
+
+                    <Card>
+
+                        <div className="d-flex justify-between align-center mb-4">
+
+                            <div>
+
+                                <h3>
+                                    {isHindi
+                                        ? 'रिपीट ऑफेंडर'
+                                        : 'Repeat Offenders'}
+                                </h3>
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.72rem',
+                                        color:
+                                            'var(--text-secondary)',
+                                        marginTop:
+                                            3
+                                    }}
+                                >
+                                    {isHindi
+                                        ? 'उच्च जोखिम वाले निर्माता'
+                                        : 'Manufacturers with repeated violations'}
+                                </p>
+
+                            </div>
+
+                            <Target
+                                size={19}
+                                className="text-danger"
+                            />
+
+                        </div>
+
+                        {offenders.length ===
+                        0 ? (
+
+                            <div
+                                style={{
+                                    textAlign:
+                                        'center',
+                                    padding:
+                                        '22px 10px',
+                                    color:
+                                        'var(--text-secondary)'
+                                }}
+                            >
+
+                                <CheckCircle2
+                                    size={26}
+                                    style={{
+                                        marginBottom:
+                                            7,
+                                        color:
+                                            'var(--success)'
+                                    }}
+                                />
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.8rem',
+                                        fontWeight:
+                                            600
+                                    }}
+                                >
+                                    No repeat offenders found
+                                </p>
+
+                            </div>
+
+                        ) : (
+
+                            <div
+                                style={{
+                                    display:
+                                        'flex',
+                                    flexDirection:
+                                        'column',
+                                    gap: 9
+                                }}
+                            >
+
+                                {offenders.map(
+                                    (
+                                        offender,
+                                        index
+                                    ) => (
+
+                                        <div
+                                            key={
+                                                `${offender.manufacturer}-${index}`
+                                            }
+                                            style={{
+                                                display:
+                                                    'flex',
+                                                justifyContent:
+                                                    'space-between',
+                                                alignItems:
+                                                    'center',
+                                                padding:
+                                                    '11px 12px',
+                                                background:
+                                                    'var(--bg-app)',
+                                                border:
+                                                    '1px solid var(--border)',
+                                                borderRadius:
+                                                    11
+                                            }}
+                                        >
+
+                                            <div
+                                                className="d-flex align-center gap-2"
+                                            >
+
+                                                <div
+                                                    style={{
+                                                        width:
+                                                            30,
+                                                        height:
+                                                            30,
+                                                        borderRadius:
+                                                            9,
+                                                        background:
+                                                            'var(--danger-light)',
+                                                        color:
+                                                            'var(--danger)',
+                                                        display:
+                                                            'flex',
+                                                        alignItems:
+                                                            'center',
+                                                        justifyContent:
+                                                            'center'
+                                                    }}
+                                                >
+                                                    <Building2
+                                                        size={
+                                                            15
+                                                        }
+                                                    />
+                                                </div>
+
+                                                <div>
+
+                                                    <p
+                                                        style={{
+                                                            fontWeight:
+                                                                700,
+                                                            fontSize:
+                                                                '0.82rem'
+                                                        }}
+                                                    >
+                                                        {
+                                                            offender.manufacturer
+                                                        }
+                                                    </p>
+
+                                                    <p
+                                                        style={{
+                                                            fontSize:
+                                                                '0.68rem',
+                                                            color:
+                                                                'var(--text-secondary)',
+                                                            marginTop:
+                                                                2
+                                                        }}
+                                                    >
+                                                        Repeated violations
+                                                    </p>
+
+                                                </div>
+
+                                            </div>
+
+                                            <span
+                                                style={{
+                                                    padding:
+                                                        '5px 8px',
+                                                    borderRadius:
+                                                        7,
+                                                    background:
+                                                        'var(--danger-light)',
+                                                    color:
+                                                        'var(--danger)',
+                                                    fontSize:
+                                                        '0.7rem',
+                                                    fontWeight:
+                                                        800
+                                                }}
+                                            >
+                                                {
+                                                    offender.violations
+                                                }
+                                            </span>
+
+                                        </div>
+
+                                    )
+                                )}
+
+                            </div>
+
+                        )}
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            style={{
+                                width:
+                                    '100%',
+                                marginTop:
+                                    14
+                            }}
+                            onClick={() =>
+                                navigate(
+                                    '/repository'
+                                )
+                            }
+                        >
+                            View Full List
+                            <ArrowRight
+                                size={14}
+                                style={{
+                                    marginLeft: 6
+                                }}
+                            />
+                        </Button>
+
+                    </Card>
+
+                    {/* =================================================
+                        QUICK ACTIONS
+                    ================================================= */}
+
+                    <Card>
+
+                        <div
+                            className="d-flex align-center gap-2 mb-4"
+                        >
+
+                            <Target
+                                size={18}
+                                className="text-brand"
+                            />
+
+                            <h3>
+                                {isHindi
+                                    ? 'त्वरित कार्य'
+                                    : 'Quick Actions'}
+                            </h3>
+
+                        </div>
+
+                        <div
+                            style={{
+                                display:
+                                    'grid',
+                                gridTemplateColumns:
+                                    '1fr 1fr',
+                                gap: 10
+                            }}
+                        >
+
+                            <button
+                                onClick={() =>
+                                    navigate(
+                                        '/scan'
+                                    )
+                                }
+                                style={{
+                                    border:
+                                        '1px solid var(--border)',
+                                    background:
+                                        'var(--bg-app)',
+                                    borderRadius:
+                                        11,
+                                    padding:
+                                        '14px 10px',
+                                    cursor:
+                                        'pointer',
+                                    color:
+                                        'var(--text-primary)'
+                                }}
+                            >
+
+                                <FileScan
+                                    size={20}
+                                    className="text-brand"
+                                />
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.75rem',
+                                        fontWeight:
+                                            700,
+                                        marginTop:
+                                            7
+                                    }}
+                                >
+                                    New Scan
+                                </p>
+
+                            </button>
+
+                            <button
+                                onClick={() =>
+                                    navigate(
+                                        '/history'
+                                    )
+                                }
+                                style={{
+                                    border:
+                                        '1px solid var(--border)',
+                                    background:
+                                        'var(--bg-app)',
+                                    borderRadius:
+                                        11,
+                                    padding:
+                                        '14px 10px',
+                                    cursor:
+                                        'pointer',
+                                    color:
+                                        'var(--text-primary)'
+                                }}
+                            >
+
+                                <Clock
+                                    size={20}
+                                    className="text-brand"
+                                />
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.75rem',
+                                        fontWeight:
+                                            700,
+                                        marginTop:
+                                            7
+                                    }}
+                                >
+                                    History
+                                </p>
+
+                            </button>
+
+                            <button
+                                onClick={() =>
+                                    navigate(
+                                        '/repository'
+                                    )
+                                }
+                                style={{
+                                    border:
+                                        '1px solid var(--border)',
+                                    background:
+                                        'var(--bg-app)',
+                                    borderRadius:
+                                        11,
+                                    padding:
+                                        '14px 10px',
+                                    cursor:
+                                        'pointer',
+                                    color:
+                                        'var(--text-primary)'
+                                }}
+                            >
+
+                                <Building2
+                                    size={20}
+                                    className="text-brand"
+                                />
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.75rem',
+                                        fontWeight:
+                                            700,
+                                        marginTop:
+                                            7
+                                    }}
+                                >
+                                    Repository
+                                </p>
+
+                            </button>
+
+                            <button
+                                onClick={() =>
+                                    navigate(
+                                        '/rankings'
+                                    )
+                                }
+                                style={{
+                                    border:
+                                        '1px solid var(--border)',
+                                    background:
+                                        'var(--bg-app)',
+                                    borderRadius:
+                                        11,
+                                    padding:
+                                        '14px 10px',
+                                    cursor:
+                                        'pointer',
+                                    color:
+                                        'var(--text-primary)'
+                                }}
+                            >
+
+                                <Users
+                                    size={20}
+                                    className="text-brand"
+                                />
+
+                                <p
+                                    style={{
+                                        fontSize:
+                                            '0.75rem',
+                                        fontWeight:
+                                            700,
+                                        marginTop:
+                                            7
+                                    }}
+                                >
+                                    Rankings
+                                </p>
+
+                            </button>
+
+                        </div>
+
+                    </Card>
+
                 </div>
 
             </div>
 
+            {/* =================================================
+                FOOTER INSIGHT
+            ================================================= */}
+
+            <div
+                style={{
+                    padding:
+                        '16px 18px',
+                    borderRadius:
+                        14,
+                    background:
+                        'var(--bg-card)',
+                    border:
+                        '1px solid var(--border)',
+                    display:
+                        'flex',
+                    alignItems:
+                        'center',
+                    gap: 12,
+                    marginBottom:
+                        10
+                }}
+            >
+
+                <TrendingUp
+                    size={18}
+                    className="text-brand"
+                />
+
+                <div>
+
+                    <p
+                        style={{
+                            fontWeight:
+                                700,
+                            fontSize:
+                                '0.82rem'
+                        }}
+                    >
+                        {isHindi
+                            ? 'निरीक्षण इंटेलिजेंस'
+                            : 'Inspection Intelligence'}
+                    </p>
+
+                    <p
+                        style={{
+                            fontSize:
+                                '0.74rem',
+                            color:
+                                'var(--text-secondary)',
+                            marginTop:
+                                2
+                        }}
+                    >
+                        {isHindi
+                            ? 'डैशबोर्ड पर दिखाए गए आंकड़े आपके उपलब्ध निरीक्षण डेटा से गणना किए गए हैं।'
+                            : 'Dashboard metrics and violation categories are calculated from your available inspection data.'}
+                    </p>
+
+                </div>
+
+            </div>
+
+            {/* =================================================
+                LOCAL ANIMATIONS
+            ================================================= */}
+
             <style>
                 {`
-                    @keyframes pulse {
-                        0% {
-                            transform: scale(1);
-                            opacity: 0.8;
+                    @keyframes spin {
+                        from {
+                            transform: rotate(0deg);
                         }
-
-                        50% {
-                            transform: scale(1.5);
-                            opacity: 0.4;
+                        to {
+                            transform: rotate(360deg);
                         }
+                    }
 
-                        100% {
-                            transform: scale(1);
-                            opacity: 0.8;
+                    @media (max-width: 768px) {
+                        .page-title {
+                            font-size: 1.65rem !important;
                         }
                     }
                 `}
